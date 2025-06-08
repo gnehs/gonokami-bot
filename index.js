@@ -2,7 +2,7 @@ import "dotenv/config";
 import { Telegraf } from "telegraf";
 import crypto from "crypto";
 import os from "os";
-import JSONdb from "simple-json-db";
+import JsonFileDb from "./utils/db.js";
 import fetch from "node-fetch";
 import fs from "fs";
 
@@ -15,8 +15,8 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const voteData = new JSONdb("./data/votes.json");
-const subData = new JSONdb("./data/subscriptions.json");
+const voteData = new JsonFileDb("votes.json");
+const subData = new JsonFileDb("subscriptions.json");
 
 // Migrate subscriptions from votes.json to subscriptions.json
 if (voteData.has("subscriptions")) {

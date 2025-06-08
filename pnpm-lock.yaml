@@ -14,9 +14,6 @@ importers:
       node-fetch:
         specifier: ^3.3.2
         version: 3.3.2
-      simple-json-db:
-        specifier: ^2.0.0
-        version: 2.0.0
       telegraf:
         specifier: ^4.16.3
         version: 4.16.3
@@ -104,10 +101,6 @@ packages:
     resolution: {integrity: sha512-jLYV0DORrzY3xaz/S9ydJL6Iz7essZeAfnAavsJ+zsJGZ1MOnsS52yRjU3uF3pJa/lla7+wisp//fxOwOH8SKQ==}
     engines: {node: '>= 0.10'}
 
-  simple-json-db@2.0.0:
-    resolution: {integrity: sha512-oTh7gFQzqAe0E8RN3EkisPo0CojkzcKCKibTcJncg0yt47hWTaNwwjX/FsxfXSTDxfMjBFXFVnZe/EskAlJr7w==}
-    engines: {node: '>=10.0'}
-
   telegraf@4.16.3:
     resolution: {integrity: sha512-yjEu2NwkHlXu0OARWoNhJlIjX09dRktiMQFsM678BAH/PEPVwctzL67+tvXqLCRQQvm3SDtki2saGO9hLlz68w==}
     engines: {node: ^12.20.0 || >=14.13.1}
@@ -185,8 +178,6 @@ snapshots:
       buffer-alloc: 1.2.0
 
   sandwich-stream@2.0.2: {}
-
-  simple-json-db@2.0.0: {}
 
   telegraf@4.16.3:
     dependencies:

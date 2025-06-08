@@ -16,7 +16,6 @@
   "dependencies": {
     "dotenv": "^16.5.0",
     "node-fetch": "^3.3.2",
-    "simple-json-db": "^2.0.0",
     "telegraf": "^4.16.3"
   }
 }
