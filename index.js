@@ -502,13 +502,7 @@ function updatePollData(id, data) {
   polls[id] = poll;
   voteData.set("polls", polls);
 }
-try {
-  await bot.launch();
-} catch (e) {
-  await bot.launch({
-    dropPendingUpdates: true,
-  });
-}
+await bot.launch();
 
 // Enable graceful stop
 process.once("SIGINT", () => bot.stop("SIGINT"));
