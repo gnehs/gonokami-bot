@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/avater.png" width="200" />
+</div>
+
 # 👑 榮勾斯揪拉麵精靈
 
 哼嗯，這是偶，國王熊熊榮勾斯揪的 Telegram Bot。怕的是他。
