@@ -47,8 +47,30 @@ bot.command("number", async (ctx) => {
   }
 
   const targetNumber = args[0];
-
   let responseText = `👀 目前五之神號碼為 *${currentNumber}*`;
+
+  const subscriptions = voteData.get("subscriptions") || [];
+  const existingSub = subscriptions.find(
+    (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
+  );
+
+  if (existingSub) {
+    responseText += `\n✅ 您已訂閱 ${existingSub.target_number} 號，叫到時會通知您。`;
+    return ctx.reply(responseText, {
+      parse_mode: "Markdown",
+      reply_to_message_id: ctx.message.message_id,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "🚫 取消訂閱",
+              callback_data: `unsubscribe_action`,
+            },
+          ],
+        ],
+      },
+    });
+  }
 
   const isValidNumber =
     targetNumber &&
@@ -140,24 +162,31 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
   await ctx.answerCbQuery(`✅ 已訂閱 ${targetNumber} 號`);
 });
 
-bot.command("unsubscribe", async (ctx) => {
+bot.action("unsubscribe_action", async (ctx) => {
   let subscriptions = voteData.get("subscriptions") || [];
   const subIndex = subscriptions.findIndex(
     (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
   );
 
   if (subIndex === -1) {
-    return ctx.reply("您沒有訂閱任何號碼", {
-      reply_to_message_id: ctx.message.message_id,
-    });
+    await ctx.editMessageReplyMarkup(undefined);
+    return ctx.answerCbQuery("⚠️ 您沒有訂閱任何號碼", { show_alert: true });
   }
 
+  const sub = subscriptions[subIndex];
   subscriptions.splice(subIndex, 1);
   voteData.set("subscriptions", subscriptions);
 
-  ctx.reply("已取消訂閱", {
-    reply_to_message_id: ctx.message.message_id,
-  });
+  const message = ctx.update.callback_query.message;
+  const originalText = message.text.split("\n")[0];
+
+  await ctx.editMessageText(
+    `${originalText}\n\n🚫 已取消訂閱 ${sub.target_number} 號。`,
+    {
+      parse_mode: "Markdown",
+    }
+  );
+  await ctx.answerCbQuery(`🚫 已取消訂閱 ${sub.target_number} 號`);
 });
 
 async function checkSubscriptions() {
