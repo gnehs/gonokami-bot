@@ -5,6 +5,15 @@ import os from "os";
 import JsonFileDb from "./utils/db.js";
 import fs from "fs";
 
+let botUsername;
+async function getBotUsername(ctx) {
+  if (!botUsername) {
+    const me = await ctx.telegram.getMe();
+    botUsername = me.username;
+  }
+  return botUsername;
+}
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const salt = os.hostname() || "salt";
@@ -56,6 +65,121 @@ async function getCurrentNumber() {
   }
 }
 
+bot.start(async (ctx) => {
+  if (ctx.chat.type !== "private") {
+    return;
+  }
+
+  const payload = ctx.startPayload;
+
+  if (!payload) {
+    return ctx.reply(
+      "安安，榮勾斯揪來了，怕的是他。有事嗎？\n想訂閱叫號可以打 `/number <你的號碼>`，偶會幫你訂閱，很ㄅㄧㄤˋ吧 ✨。"
+    );
+  }
+
+  try {
+    const decodedPayload = Buffer.from(payload, "base64").toString("utf8");
+    const params = Object.fromEntries(
+      new URLSearchParams(decodedPayload).entries()
+    );
+    const {
+      action,
+      group_chat_id,
+      target_number,
+      user_message_id,
+      group_message_id,
+    } = params;
+
+    if (action === "subscribe") {
+      const userId = ctx.from.id;
+      const chatId = Number(group_chat_id);
+      const targetNumber = Number(target_number);
+
+      const currentNumber = await getCurrentNumber();
+      if (currentNumber === null) {
+        return ctx.reply("😵‍💫 挖哩咧，偶拿不到號碼，很遜欸，等等再試。");
+      }
+
+      if (targetNumber <= currentNumber) {
+        return ctx.reply("🤡 都跟你說過號了，你很奇欸。");
+      }
+
+      let subscriptions = subData.get("subscriptions") || [];
+      const existingSub = subscriptions.find(
+        (s) => s.chat_id === chatId && s.user_id === userId
+      );
+
+      if (existingSub) {
+        return ctx.reply(
+          `⚠️ 你已經訂閱 ${existingSub.target_number} 號了，不要重複訂，很遜。`
+        );
+      }
+
+      subscriptions.push({
+        chat_id: chatId,
+        user_id: userId,
+        first_name: ctx.from.first_name,
+        target_number: targetNumber,
+        created_at: Date.now(),
+        message_id: Number(user_message_id),
+      });
+      subData.set("subscriptions", subscriptions);
+
+      await ctx.reply(
+        `👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
+        { parse_mode: "Markdown" }
+      );
+      await bot.telegram.sendMessage(
+        chatId,
+        `✅ ${ctx.from.first_name} 已訂閱 ${targetNumber} 號。`,
+        { reply_to_message_id: Number(user_message_id) }
+      );
+    } else if (action === "unsubscribe") {
+      const userId = ctx.from.id;
+      const chatId = Number(group_chat_id);
+
+      let subscriptions = subData.get("subscriptions") || [];
+      const subIndex = subscriptions.findIndex(
+        (s) => s.chat_id === chatId && s.user_id === userId
+      );
+
+      if (subIndex === -1) {
+        return ctx.reply("🗣️ 你又沒訂閱，是在取消什麼，告老師喔！");
+      }
+
+      const sub = subscriptions[subIndex];
+      subscriptions.splice(subIndex, 1);
+      subData.set("subscriptions", subscriptions);
+
+      await ctx.reply(
+        `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
+        { parse_mode: "Markdown" }
+      );
+
+      if (group_message_id) {
+        const unsubscribedText = `✅ @${ctx.from.first_name} 已取消 *${sub.target_number}* 號的訂閱了。`;
+        try {
+          await bot.telegram.editMessageText(
+            chatId,
+            Number(group_message_id),
+            undefined,
+            unsubscribedText,
+            { parse_mode: "Markdown" }
+          );
+        } catch (e) {
+          if (!e.message.includes("message is not modified")) {
+            console.error("Failed to edit message on unsubscribe:", e);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to handle start command with payload", e);
+    await ctx.reply("挖哩咧，偶搞不懂你的指令，很遜欸。");
+  }
+});
+
 bot.command("number", async (ctx) => {
   ctx.telegram.sendChatAction(ctx.chat.id, "typing");
   let args = ctx.message.text.split(" ").slice(1);
@@ -76,22 +200,35 @@ bot.command("number", async (ctx) => {
     (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
   );
 
+  const username = await getBotUsername(ctx);
+
   if (existingSub) {
     responseText += `\n✅ 你訂閱的 *${existingSub.target_number}* 號偶記下了，怕的是他。叫到再跟你說，安安。`;
-    return ctx.reply(responseText, {
+    const sentMessage = await ctx.reply(responseText, {
       parse_mode: "Markdown",
       reply_to_message_id: ctx.message.message_id,
-      reply_markup: {
+    });
+
+    const payload = `action=unsubscribe&group_chat_id=${ctx.chat.id}&group_message_id=${sentMessage.message_id}`;
+    const base64Payload = Buffer.from(payload).toString("base64");
+    const url = `https://t.me/${username}?start=${base64Payload}`;
+
+    await ctx.telegram.editMessageReplyMarkup(
+      ctx.chat.id,
+      sentMessage.message_id,
+      undefined,
+      {
         inline_keyboard: [
           [
             {
-              text: "🚫 偶不要了",
-              callback_data: `unsubscribe_action_${existingSub.target_number}`,
+              text: "🚫 私訊偶取消",
+              url: url,
             },
           ],
         ],
-      },
-    });
+      }
+    );
+    return;
   }
 
   const isValidNumber =
@@ -104,7 +241,10 @@ bot.command("number", async (ctx) => {
 
   if (isValidNumber) {
     if (targetNumber > currentNumber) {
-      responseText += `\n🤔 你這 *${targetNumber}* 號還沒到，急什麼。怕的是他。`;
+      responseText += `\n🤔 你這 *${targetNumber}* 號還沒到，想訂閱就私訊偶，怕的是他。`;
+      const payload = `action=subscribe&target_number=${targetNumber}&group_chat_id=${ctx.chat.id}&user_message_id=${ctx.message.message_id}`;
+      const base64Payload = Buffer.from(payload).toString("base64");
+      const url = `https://t.me/${username}?start=${base64Payload}`;
       return ctx.reply(responseText, {
         parse_mode: "Markdown",
         reply_to_message_id: ctx.message.message_id,
@@ -112,8 +252,8 @@ bot.command("number", async (ctx) => {
           inline_keyboard: [
             [
               {
-                text: "🔔 幫偶訂閱",
-                callback_data: `subscribe_number_${targetNumber}`,
+                text: "🔔 私訊偶訂閱",
+                url: url,
               },
             ],
           ],
@@ -132,125 +272,6 @@ bot.command("number", async (ctx) => {
     parse_mode: "Markdown",
     reply_to_message_id: ctx.message.message_id,
   });
-});
-
-bot.action(/subscribe_number_(\d+)/, async (ctx) => {
-  const targetNumber = ctx.match[1];
-  const userId = ctx.from.id;
-  const chatId = ctx.chat.id;
-  const message = ctx.update.callback_query.message;
-
-  const currentNumber = await getCurrentNumber();
-  if (currentNumber === null) {
-    return ctx.answerCbQuery("😵‍💫 挖哩咧，偶拿不到號碼，很遜欸，等等再試。", {
-      show_alert: true,
-    });
-  }
-
-  if (targetNumber <= currentNumber) {
-    await ctx.editMessageReplyMarkup(undefined);
-    return ctx.answerCbQuery("🤡 都跟你說過號了，你很奇欸。", {
-      show_alert: true,
-    });
-  }
-
-  let subscriptions = subData.get("subscriptions") || [];
-  const existingSub = subscriptions.find(
-    (s) => s.chat_id === chatId && s.user_id === userId
-  );
-
-  if (existingSub) {
-    await ctx.editMessageReplyMarkup(undefined);
-    return ctx.answerCbQuery(
-      `⚠️ 你已經訂閱 ${existingSub.target_number} 號了，不要重複訂，很遜。`,
-      { show_alert: true }
-    );
-  }
-
-  subscriptions.push({
-    chat_id: chatId,
-    user_id: userId,
-    first_name: ctx.from.first_name,
-    target_number: Number(targetNumber),
-    created_at: Date.now(),
-    message_id: message.message_id,
-  });
-  subData.set("subscriptions", subscriptions);
-
-  await ctx.editMessageText(
-    `${
-      message.text.split("\n\n")[0]
-    }\n\n👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "🚫 偶不要了",
-              callback_data: `unsubscribe_action_${targetNumber}`,
-            },
-          ],
-        ],
-      },
-    }
-  );
-  await ctx.answerCbQuery(`✅ ${targetNumber} 號，偶記下了。`);
-});
-
-bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
-  const targetNumber = ctx.match[1];
-  let subscriptions = subData.get("subscriptions") || [];
-  const subIndex = subscriptions.findIndex(
-    (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
-  );
-
-  if (subIndex === -1) {
-    await ctx.editMessageReplyMarkup(undefined);
-    return ctx.answerCbQuery("🗣️ 你又沒訂閱，是在取消什麼，告老師喔！", {
-      show_alert: true,
-    });
-  }
-
-  const sub = subscriptions[subIndex];
-  subscriptions.splice(subIndex, 1);
-  subData.set("subscriptions", subscriptions);
-
-  const currentNumber = await getCurrentNumber();
-
-  if (currentNumber === null) {
-    await ctx.editMessageText(
-      `👋 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
-      { parse_mode: "Markdown" }
-    );
-    return ctx.answerCbQuery(`🚫 ${sub.target_number} 號，偶幫你取消了，886。`);
-  }
-
-  let responseText = `👑 哼嗯，現在號碼是 *${currentNumber}*，醬子。`;
-  let replyMarkup = undefined;
-
-  if (Number(targetNumber) > currentNumber) {
-    responseText += `\n🤔 你這 *${targetNumber}* 號還沒到，急什麼。怕的是他。`;
-    replyMarkup = {
-      inline_keyboard: [
-        [
-          {
-            text: "🔔 幫偶訂閱",
-            callback_data: `subscribe_number_${targetNumber}`,
-          },
-        ],
-      ],
-    };
-  } else {
-    responseText += `\n🤡 這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
-  }
-
-  await ctx.editMessageText(responseText, {
-    parse_mode: "Markdown",
-    reply_markup: replyMarkup,
-  });
-
-  await ctx.answerCbQuery(`🚫 ${sub.target_number} 號，偶幫你取消了，886。`);
 });
 
 async function checkSubscriptions() {
@@ -376,11 +397,7 @@ bot.command("voteramen", async (ctx) => {
       inline_keyboard: [
         [
           {
-            text: "🧮 算一下",
-            callback_data: `countremenvote`,
-          },
-          {
-            text: "🚫 結束！",
+            text: "👥 0 人 | 🚫 結束投票",
             callback_data: `stopramenvote_${hash(ctx.message.from.id)}`,
           },
         ],
@@ -390,6 +407,8 @@ bot.command("voteramen", async (ctx) => {
   updatePollData(data.poll.id, {
     ...data.poll,
     chat_id: ctx.chat.id,
+    message_id: data.message_id,
+    user_id: ctx.from.id,
     chat_name: ctx.chat.title || ctx.chat.first_name,
     chat_type: ctx.chat.type,
     votes: {},
@@ -409,6 +428,7 @@ bot.on("poll_answer", async (ctx) => {
   // update poll
   let polls = voteData.get("polls") || {};
   let poll = polls[pollAnswer.poll_id];
+  if (!poll) return;
   let options = pollAnswer.option_ids;
   poll.votes[pollAnswer.user.id] = options;
   updatePollData(pollAnswer.poll_id, poll);
@@ -419,6 +439,37 @@ bot.on("poll_answer", async (ctx) => {
       poll.chat_id
     })`
   );
+
+  // Update voter count in reply markup for ramen votes
+  const isRamenVote = poll.options.some((opt) => opt.text.includes("|"));
+  if (!isRamenVote) return;
+
+  const totalCount = Object.values(poll.votes)
+    .flatMap((options) => options)
+    .map((optionId) => (optionId % 2) + 1)
+    .reduce((sum, quantity) => sum + quantity, 0);
+
+  try {
+    await bot.telegram.editMessageReplyMarkup(
+      poll.chat_id,
+      poll.message_id,
+      undefined,
+      {
+        inline_keyboard: [
+          [
+            {
+              text: `👥 ${totalCount} 人 | 🚫 結束投票`,
+              callback_data: `stopramenvote_${hash(poll.user_id)}`,
+            },
+          ],
+        ],
+      }
+    );
+  } catch (e) {
+    if (!e.message.includes("message is not modified")) {
+      console.error("Failed to edit reply markup for voter count:", e);
+    }
+  }
 });
 
 bot.action(/stopramenvote_(.+)/, async (ctx) => {
@@ -444,22 +495,7 @@ bot.action(/stopramenvote_(.+)/, async (ctx) => {
     ctx.answerCbQuery("🗣️ 告老師喔，只有發起人才能結束投票，你很奇欸。");
   }
 });
-bot.action(/countremenvote/, async (ctx) => {
-  let pollID = ctx.update.callback_query.message.poll.id;
-  let poll = voteData.get("polls")[pollID];
-  let count = Object.values(poll.votes)
-    .map((x) => {
-      let sum = 0;
-      x.forEach((y) => {
-        sum += (y % 2) + 1;
-      });
-      return sum;
-    })
-    .reduce((acc, cur) => acc + cur, 0);
-  ctx.answerCbQuery(`安安 👋，目前有 ${count} 個人。`, {
-    show_alert: true,
-  });
-});
+
 function parsePollResult(poll) {
   let options = [
     ...new Set(
