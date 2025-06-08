@@ -1,14 +1,18 @@
-FROM node:22-alpine
-
-ENV TZ=Asia/Taipei
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
+FROM node:20-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
 WORKDIR /app
-COPY ./package.json ./
-COPY ./package-lock.json ./
-RUN npm install --production
-RUN echo {} >> votes.json
+
+FROM base AS deps
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
+
+FROM base
 ENV NODE_ENV=production
-ENV BOT_TOKEN=1234:abcd
+WORKDIR /app
 COPY . .
-CMD ["npm", "start"]
+COPY --from=deps /app/node_modules ./node_modules
+RUN echo {} > subscriptions.json
+RUN echo {} > votes.json
+CMD [ "pnpm", "start" ]
