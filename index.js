@@ -64,7 +64,7 @@ bot.command("number", async (ctx) => {
           [
             {
               text: "🚫 取消訂閱",
-              callback_data: `unsubscribe_action`,
+              callback_data: `unsubscribe_action_${existingSub.target_number}`,
             },
           ],
         ],
@@ -103,7 +103,7 @@ bot.command("number", async (ctx) => {
   } else if (targetNumber) {
     responseText += `\n✖️ 請輸入有效的號碼（1001-1200）`;
   } else {
-    responseText += `\n\n可使用 \`/number <號碼牌號碼>\` 來查詢您的號碼狀態`;
+    responseText += `\n\n可使用 \`/number <號碼牌號碼>\` 來訂閱叫號通知`;
   }
 
   ctx.reply(responseText, {
@@ -138,7 +138,7 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
   if (existingSub) {
     await ctx.editMessageReplyMarkup(undefined);
     return ctx.answerCbQuery(
-      `⚠️ 您已經訂閱了 ${existingSub.target_number} 號，請先用 /unsubscribe 取消`,
+      `⚠️ 您已經訂閱了 ${existingSub.target_number} 號`,
       { show_alert: true }
     );
   }
@@ -154,15 +154,26 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
   voteData.set("subscriptions", subscriptions);
 
   await ctx.editMessageText(
-    `${message.text}\n\n✅ 已訂閱 ${targetNumber} 號，叫到時會通知您。\n可使用 /unsubscribe 取消訂閱`,
+    `${message.text}\n\n✅ 已訂閱 ${targetNumber} 號，叫到時會通知您。`,
     {
       parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "🚫 取消訂閱",
+              callback_data: `unsubscribe_action_${targetNumber}`,
+            },
+          ],
+        ],
+      },
     }
   );
   await ctx.answerCbQuery(`✅ 已訂閱 ${targetNumber} 號`);
 });
 
-bot.action("unsubscribe_action", async (ctx) => {
+bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
+  const targetNumber = ctx.match[1];
   let subscriptions = voteData.get("subscriptions") || [];
   const subIndex = subscriptions.findIndex(
     (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
@@ -178,14 +189,21 @@ bot.action("unsubscribe_action", async (ctx) => {
   voteData.set("subscriptions", subscriptions);
 
   const message = ctx.update.callback_query.message;
-  const originalText = message.text.split("\n")[0];
+  const originalText = message.text.split("\n\n")[0];
 
-  await ctx.editMessageText(
-    `${originalText}\n\n🚫 已取消訂閱 ${sub.target_number} 號。`,
-    {
-      parse_mode: "Markdown",
-    }
-  );
+  await ctx.editMessageText(originalText, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "🔔 訂閱此號碼",
+            callback_data: `subscribe_number_${targetNumber}`,
+          },
+        ],
+      ],
+    },
+  });
   await ctx.answerCbQuery(`🚫 已取消訂閱 ${sub.target_number} 號`);
 });
 
