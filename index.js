@@ -41,13 +41,13 @@ bot.command("number", async (ctx) => {
   const currentNumber = await getCurrentNumber();
 
   if (currentNumber === null) {
-    return ctx.reply("無法取得號碼...", {
+    return ctx.reply("挖哩咧，偶拿不到號碼，很遜欸。", {
       reply_to_message_id: ctx.message.message_id,
     });
   }
 
   const targetNumber = args[0];
-  let responseText = `👀 目前五之神號碼為 *${currentNumber}*`;
+  let responseText = `哼嗯，現在號碼是 *${currentNumber}*，醬子。`;
 
   const subscriptions = voteData.get("subscriptions") || [];
   const existingSub = subscriptions.find(
@@ -55,7 +55,7 @@ bot.command("number", async (ctx) => {
   );
 
   if (existingSub) {
-    responseText += `\n✅ 您已訂閱 ${existingSub.target_number} 號，叫到時會通知您。`;
+    responseText += `\n你訂閱的 *${existingSub.target_number}* 號偶記下了，怕的是他。叫到再跟你說，安安。`;
     return ctx.reply(responseText, {
       parse_mode: "Markdown",
       reply_to_message_id: ctx.message.message_id,
@@ -63,7 +63,7 @@ bot.command("number", async (ctx) => {
         inline_keyboard: [
           [
             {
-              text: "🚫 取消訂閱",
+              text: "偶不要了",
               callback_data: `unsubscribe_action_${existingSub.target_number}`,
             },
           ],
@@ -82,7 +82,7 @@ bot.command("number", async (ctx) => {
 
   if (isValidNumber) {
     if (targetNumber > currentNumber) {
-      responseText += `\n✅ 您輸入的號碼尚未被叫到`;
+      responseText += `\n你這 *${targetNumber}* 號還沒到，急什麼。怕的是他。`;
       return ctx.reply(responseText, {
         parse_mode: "Markdown",
         reply_to_message_id: ctx.message.message_id,
@@ -90,7 +90,7 @@ bot.command("number", async (ctx) => {
           inline_keyboard: [
             [
               {
-                text: "🔔 訂閱此號碼",
+                text: "幫偶訂閱",
                 callback_data: `subscribe_number_${targetNumber}`,
               },
             ],
@@ -98,12 +98,12 @@ bot.command("number", async (ctx) => {
         },
       });
     } else {
-      responseText += `\n✖️ 您輸入的號碼牌已過號`;
+      responseText += `\n這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
     }
   } else if (targetNumber) {
-    responseText += `\n✖️ 請輸入有效的號碼（1001-1200）`;
+    responseText += `\n告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`;
   } else {
-    responseText += `\n\n可使用 \`/number <號碼牌號碼>\` 來訂閱叫號通知`;
+    responseText += `\n\n想訂閱叫號？打 \`/number <你的號碼>\`，偶幫你記著，很ㄅㄧㄤˋ吧。`;
   }
 
   ctx.reply(responseText, {
@@ -120,14 +120,16 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
 
   const currentNumber = await getCurrentNumber();
   if (currentNumber === null) {
-    return ctx.answerCbQuery("❌ 無法取得目前號碼，請稍後再試", {
+    return ctx.answerCbQuery("挖哩咧，偶拿不到號碼，很遜欸，等等再試。", {
       show_alert: true,
     });
   }
 
   if (targetNumber <= currentNumber) {
     await ctx.editMessageReplyMarkup(undefined);
-    return ctx.answerCbQuery("❌ 此號碼已過號", { show_alert: true });
+    return ctx.answerCbQuery("都跟你說過號了，你很奇欸。", {
+      show_alert: true,
+    });
   }
 
   let subscriptions = voteData.get("subscriptions") || [];
@@ -138,7 +140,7 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
   if (existingSub) {
     await ctx.editMessageReplyMarkup(undefined);
     return ctx.answerCbQuery(
-      `⚠️ 您已經訂閱了 ${existingSub.target_number} 號`,
+      `⚠️ 你已經訂閱 ${existingSub.target_number} 號了，不要重複訂，很遜。`,
       { show_alert: true }
     );
   }
@@ -154,14 +156,16 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
   voteData.set("subscriptions", subscriptions);
 
   await ctx.editMessageText(
-    `${message.text}\n\n✅ 已訂閱 ${targetNumber} 號，叫到時會通知您。`,
+    `${
+      message.text.split("\n\n")[0]
+    }\n\n哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
     {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
           [
             {
-              text: "🚫 取消訂閱",
+              text: "偶不要了",
               callback_data: `unsubscribe_action_${targetNumber}`,
             },
           ],
@@ -169,7 +173,7 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
       },
     }
   );
-  await ctx.answerCbQuery(`✅ 已訂閱 ${targetNumber} 號`);
+  await ctx.answerCbQuery(`✅ ${targetNumber} 號，偶記下了。`);
 });
 
 bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
@@ -181,7 +185,9 @@ bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
 
   if (subIndex === -1) {
     await ctx.editMessageReplyMarkup(undefined);
-    return ctx.answerCbQuery("⚠️ 您沒有訂閱任何號碼", { show_alert: true });
+    return ctx.answerCbQuery("你又沒訂閱，是在取消什麼，告老師喔！", {
+      show_alert: true,
+    });
   }
 
   const sub = subscriptions[subIndex];
@@ -197,14 +203,14 @@ bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
       inline_keyboard: [
         [
           {
-            text: "🔔 訂閱此號碼",
+            text: "幫偶訂閱",
             callback_data: `subscribe_number_${targetNumber}`,
           },
         ],
       ],
     },
   });
-  await ctx.answerCbQuery(`🚫 已取消訂閱 ${sub.target_number} 號`);
+  await ctx.answerCbQuery(`🚫 ${sub.target_number} 號，偶幫你取消了，886。`);
 });
 
 async function checkSubscriptions() {
@@ -226,7 +232,7 @@ async function checkSubscriptions() {
     if (currentNumber >= sub.target_number) {
       bot.telegram.sendMessage(
         sub.chat_id,
-        `🔔 @${sub.first_name} 您訂閱的 ${sub.target_number} 號到啦！`,
+        `喂， @${sub.first_name} ，你訂的 ${sub.target_number} 號到了，怕的是他。還不快去！`,
         {
           reply_to_message_id: sub.message_id,
         }
@@ -234,7 +240,7 @@ async function checkSubscriptions() {
     } else if (Date.now() - sub.created_at > fiveHours) {
       bot.telegram.sendMessage(
         sub.chat_id,
-        `⏰ @${sub.first_name} 您訂閱的 ${sub.target_number} 號已超過 5 小時，自動取消訂閱。`,
+        `欸 @${sub.first_name} ，你的 ${sub.target_number} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
         {
           reply_to_message_id: sub.message_id,
         }
@@ -252,8 +258,8 @@ setInterval(checkSubscriptions, 60 * 1000);
 // vote
 bot.command("vote", async (ctx) => {
   let args = ctx.message.text.split(" ").slice(1);
-  let voteTitle = args[0] ?? "限定拉麵";
-  let byeOptions = ["ㄅㄅ", "ＱＱ", "🥞"];
+  let voteTitle = args[0] ?? "今天ㄘ什麼";
+  let byeOptions = ["偶不吃了", "怕的是他", "蓋被被"];
   let byeOption = args[1]
     ? args[1]
     : byeOptions[Math.floor(Math.random() * byeOptions.length)];
@@ -266,7 +272,7 @@ bot.command("vote", async (ctx) => {
       inline_keyboard: [
         [
           {
-            text: "✖️停止投票",
+            text: "結束！很遜欸",
             callback_data: `stopvote_${hash(ctx.message.from.id)}`,
           },
         ],
@@ -295,19 +301,22 @@ bot.action(/stopvote_(.+)/, async (ctx) => {
         (acc, cur) => acc + cur.voter_count * cur.text.replace("+", ""),
         0
       );
-    ctx.replyWithMarkdownV2(`*${poll.question}投票結果*\n共 ${count} 人`, {
-      reply_to_message_id: ctx.update.callback_query.message.message_id,
-    });
+    ctx.replyWithMarkdownV2(
+      `*${poll.question}* 投票結束，醬子共 ${count} 個人要ㄘ。`,
+      {
+        reply_to_message_id: ctx.update.callback_query.message.message_id,
+      }
+    );
   } else {
-    ctx.answerCbQuery("✖️ 只有發起人才能停止投票");
+    ctx.answerCbQuery("告老師喔，只有發起人才能結束投票，你很奇欸。");
   }
 });
 
 // ramen vote
 bot.command("voteramen", async (ctx) => {
   let args = ctx.message.text.split(" ").slice(1);
-  let voteTitle = args[0] ?? "限定拉麵";
-  let byeOptions = ["ㄅㄅ", "ＱＱ", "🥞"];
+  let voteTitle = args[0] ?? "限定拉麵，點餐！";
+  let byeOptions = ["偶不吃了", "怕的是他", "蓋被被"];
   let byeOption =
     args[1] ?? byeOptions[Math.floor(Math.random() * byeOptions.length)];
   let voteOptions = [
@@ -327,11 +336,11 @@ bot.command("voteramen", async (ctx) => {
       inline_keyboard: [
         [
           {
-            text: "🧮計算人數",
+            text: "算一下",
             callback_data: `countremenvote`,
           },
           {
-            text: "✖️停止投票",
+            text: "結束！",
             callback_data: `stopramenvote_${hash(ctx.message.from.id)}`,
           },
         ],
@@ -380,19 +389,19 @@ bot.action(/stopramenvote_(.+)/, async (ctx) => {
       ctx.update.callback_query.message.message_id
     );
     let { count, result } = parsePollResult(poll);
-    let responseText = `*${poll.question}投票結果*\n`;
+    let responseText = `*${poll.question}* 點餐結果，挖賽：\n`;
     for (let key in result) {
       responseText += `${key}：${result[key]} 人\n`;
     }
     responseText += `———\n`;
-    responseText += `共 ${count} 人\n`;
+    responseText += `共 ${count} 個人，醬子。`;
     ctx.replyWithMarkdownV2(responseText, {
       reply_to_message_id: ctx.update.callback_query.message.message_id,
     });
 
     updatePollData(poll.id, poll);
   } else {
-    ctx.answerCbQuery("✖️ 只有發起人才能停止投票");
+    ctx.answerCbQuery("告老師喔，只有發起人才能結束投票，你很奇欸。");
   }
 });
 bot.action(/countremenvote/, async (ctx) => {
@@ -407,7 +416,7 @@ bot.action(/countremenvote/, async (ctx) => {
       return sum;
     })
     .reduce((acc, cur) => acc + cur, 0);
-  ctx.answerCbQuery(`目前投票人數：${count} 人`, {
+  ctx.answerCbQuery(`安安，目前有 ${count} 個人。`, {
     show_alert: true,
   });
 });
