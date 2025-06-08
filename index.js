@@ -70,7 +70,7 @@ bot.start(async (ctx) => {
     return;
   }
 
-  const payload = ctx.startPayload;
+  const payload = ctx.payload;
 
   if (!payload) {
     return ctx.reply(
