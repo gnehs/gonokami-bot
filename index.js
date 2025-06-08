@@ -28,13 +28,15 @@ const subData = new JsonFileDb("subscriptions.json");
 const usageLog = new JsonFileDb("usage.json");
 
 function logActivity(activity, data) {
-  const logs = usageLog.get("logs") || [];
-  logs.push({
+  const logEntry = {
     timestamp: new Date().toISOString(),
     activity,
     ...data,
-  });
+  };
+  const logs = usageLog.get("logs") || [];
+  logs.push(logEntry);
   usageLog.set("logs", logs);
+  console.log(logEntry);
 }
 
 function hash(str) {
