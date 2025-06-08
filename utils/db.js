@@ -31,11 +31,7 @@ class JsonFileDb {
   _writeData() {
     const tempFilePath = this.filePath + ".tmp";
     try {
-      fs.writeFileSync(
-        tempFilePath,
-        JSON.stringify(this._data, null, 2),
-        "utf8"
-      );
+      fs.writeFileSync(tempFilePath, JSON.stringify(this._data), "utf8");
       fs.renameSync(tempFilePath, this.filePath);
     } catch (e) {
       console.error(`Error writing to ${this.filePath}`, e);

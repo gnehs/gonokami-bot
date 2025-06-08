@@ -3,7 +3,6 @@ import { Telegraf } from "telegraf";
 import crypto from "crypto";
 import os from "os";
 import JsonFileDb from "./utils/db.js";
-import fetch from "node-fetch";
 import fs from "fs";
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
