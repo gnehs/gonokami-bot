@@ -127,7 +127,9 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
 
   if (targetNumber <= currentNumber) {
     await ctx.editMessageReplyMarkup(undefined);
-    return ctx.answerCbQuery("🤡 都跟你說過號了，你很奇欸。", { show_alert: true });
+    return ctx.answerCbQuery("🤡 都跟你說過號了，你很奇欸。", {
+      show_alert: true,
+    });
   }
 
   let subscriptions = voteData.get("subscriptions") || [];
@@ -154,7 +156,9 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
   voteData.set("subscriptions", subscriptions);
 
   await ctx.editMessageText(
-    `${message.text.split("\n\n")[0]}\n\n👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
+    `${
+      message.text.split("\n\n")[0]
+    }\n\n👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
     {
       parse_mode: "Markdown",
       reply_markup: {
@@ -315,9 +319,12 @@ bot.action(/stopvote_(.+)/, async (ctx) => {
         (acc, cur) => acc + cur.voter_count * cur.text.replace("+", ""),
         0
       );
-    ctx.replyWithMarkdownV2(`*${poll.question}* 投票結束，醬子共 ${count} 個人要ㄘ。🥳`, {
-      reply_to_message_id: ctx.update.callback_query.message.message_id,
-    });
+    ctx.replyWithMarkdownV2(
+      `*${poll.question}* 投票結束，醬子共 ${count} 個人要ㄘ。🥳`,
+      {
+        reply_to_message_id: ctx.update.callback_query.message.message_id,
+      }
+    );
   } else {
     ctx.answerCbQuery("🗣️ 告老師喔，只有發起人才能結束投票，你很奇欸。");
   }
