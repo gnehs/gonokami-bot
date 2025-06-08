@@ -96,3 +96,7 @@ alwaysApply: true
 - **投票資料**: `votes.json`
 - **訂閱資料**: [subscriptions.json](mdc:subscriptions.json)
 - **專案說明**: [README.md](mdc:README.md)
+
+---
+
+請在每次完成任務時幫我使用 git commit
