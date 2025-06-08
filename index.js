@@ -17,27 +17,6 @@ if (!fs.existsSync(dataDir)) {
 const voteData = new JsonFileDb("votes.json");
 const subData = new JsonFileDb("subscriptions.json");
 
-// Migrate subscriptions from votes.json to subscriptions.json
-if (voteData.has("subscriptions")) {
-  const subscriptions = voteData.get("subscriptions");
-  if (
-    subscriptions &&
-    Array.isArray(subscriptions) &&
-    subscriptions.length > 0
-  ) {
-    subData.set("subscriptions", subscriptions);
-    voteData.delete("subscriptions");
-    console.log("✅ Subscriptions migrated to subscriptions.json");
-  } else if (
-    subscriptions &&
-    Array.isArray(subscriptions) &&
-    subscriptions.length === 0
-  ) {
-    voteData.delete("subscriptions");
-    console.log("✅ Removed empty subscriptions from votes.json");
-  }
-}
-
 function hash(str) {
   const hash = crypto.createHash("sha256");
   hash.update(str.toString() + salt, "utf8");
