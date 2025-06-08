@@ -195,83 +195,143 @@ bot.command("number", async (ctx) => {
   const targetNumber = args[0];
   let responseText = `👑 哼嗯，現在號碼是 *${currentNumber}*，醬子。`;
 
-  const subscriptions = subData.get("subscriptions") || [];
-  const existingSub = subscriptions.find(
-    (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
-  );
-
-  const username = await getBotUsername(ctx);
-
-  if (existingSub) {
-    responseText += `\n✅ 你訂閱的 *${existingSub.target_number}* 號偶記下了，怕的是他。叫到再跟你說，安安。`;
-    const sentMessage = await ctx.reply(responseText, {
-      parse_mode: "Markdown",
-      reply_to_message_id: ctx.message.message_id,
-    });
-
-    const payload = `action=unsubscribe&group_chat_id=${ctx.chat.id}&group_message_id=${sentMessage.message_id}`;
-    const base64Payload = Buffer.from(payload).toString("base64");
-    const url = `https://t.me/${username}?start=${base64Payload}`;
-
-    await ctx.telegram.editMessageReplyMarkup(
-      ctx.chat.id,
-      sentMessage.message_id,
-      undefined,
-      {
-        inline_keyboard: [
-          [
-            {
-              text: "🚫 私訊偶取消",
-              url: url,
-            },
-          ],
-        ],
-      }
+  // Private Chat Logic
+  if (ctx.chat.type === "private") {
+    const subscriptions = subData.get("subscriptions") || [];
+    const existingSub = subscriptions.find(
+      (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
     );
-    return;
-  }
 
-  const isValidNumber =
-    targetNumber &&
-    !isNaN(targetNumber) &&
-    Number.isInteger(Number(targetNumber)) &&
-    targetNumber >= 1001 &&
-    targetNumber <= 1200 &&
-    String(targetNumber).length <= 4;
+    if (!targetNumber && existingSub) {
+      subscriptions.splice(subscriptions.indexOf(existingSub), 1);
+      subData.set("subscriptions", subscriptions);
+      return ctx.reply(
+        `🚫 哼嗯，偶幫你取消 *${existingSub.target_number}* 號的訂閱了。醬子。`,
+        { parse_mode: "Markdown" }
+      );
+    }
 
-  if (isValidNumber) {
-    if (targetNumber > currentNumber) {
-      responseText += `\n🤔 你這 *${targetNumber}* 號還沒到，想訂閱就私訊偶，怕的是他。`;
-      const payload = `action=subscribe&target_number=${targetNumber}&group_chat_id=${ctx.chat.id}&user_message_id=${ctx.message.message_id}`;
-      const base64Payload = Buffer.from(payload).toString("base64");
-      const url = `https://t.me/${username}?start=${base64Payload}`;
+    if (existingSub) {
+      responseText += `\n✅ 你已經訂閱 *${existingSub.target_number}* 號了。想取消？打 \`/number\` 就好，醬子。`;
       return ctx.reply(responseText, {
         parse_mode: "Markdown",
         reply_to_message_id: ctx.message.message_id,
-        reply_markup: {
+      });
+    }
+
+    const isValidNumber =
+      targetNumber &&
+      !isNaN(targetNumber) &&
+      Number.isInteger(Number(targetNumber)) &&
+      targetNumber >= 1001 &&
+      targetNumber <= 1200 &&
+      String(targetNumber).length <= 4;
+
+    if (isValidNumber) {
+      if (targetNumber > currentNumber) {
+        subscriptions.push({
+          chat_id: ctx.chat.id,
+          user_id: ctx.from.id,
+          first_name: ctx.from.first_name,
+          target_number: Number(targetNumber),
+          created_at: Date.now(),
+          message_id: ctx.message.message_id,
+        });
+        subData.set("subscriptions", subscriptions);
+        responseText += `\n👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。想取消再打一次 \`/number\` 就好。`;
+      } else {
+        responseText += `\n🤡 這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
+      }
+    } else if (targetNumber) {
+      responseText += `\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`;
+    } else {
+      responseText += `\n\n想訂閱叫號？打 \`/number <你的號碼>\`，偶幫你記著，很ㄅㄧㄤˋ吧 ✨。`;
+    }
+
+    return ctx.reply(responseText, {
+      parse_mode: "Markdown",
+      reply_to_message_id: ctx.message.message_id,
+    });
+  }
+  // Group Chat Logic
+  else {
+    const subscriptions = subData.get("subscriptions") || [];
+    const existingSub = subscriptions.find(
+      (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
+    );
+    const username = await getBotUsername(ctx);
+
+    if (existingSub) {
+      responseText += `\n✅ 你訂閱的 *${existingSub.target_number}* 號偶記下了，怕的是他。叫到再跟你說，安安。`;
+      const sentMessage = await ctx.reply(responseText, {
+        parse_mode: "Markdown",
+        reply_to_message_id: ctx.message.message_id,
+      });
+
+      const payload = `action=unsubscribe&group_chat_id=${ctx.chat.id}&group_message_id=${sentMessage.message_id}`;
+      const base64Payload = Buffer.from(payload).toString("base64");
+      const url = `https://t.me/${username}?start=${base64Payload}`;
+
+      await ctx.telegram.editMessageReplyMarkup(
+        ctx.chat.id,
+        sentMessage.message_id,
+        undefined,
+        {
           inline_keyboard: [
             [
               {
-                text: "🔔 私訊偶訂閱",
+                text: "🚫 私訊偶取消",
                 url: url,
               },
             ],
           ],
-        },
-      });
-    } else {
-      responseText += `\n🤡 這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
+        }
+      );
+      return;
     }
-  } else if (targetNumber) {
-    responseText += `\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`;
-  } else {
-    responseText += `\n\n想訂閱叫號？打 \`/number <你的號碼>\`，偶幫你記著，很ㄅㄧㄤˋ吧 ✨。`;
-  }
 
-  ctx.reply(responseText, {
-    parse_mode: "Markdown",
-    reply_to_message_id: ctx.message.message_id,
-  });
+    const isValidNumber =
+      targetNumber &&
+      !isNaN(targetNumber) &&
+      Number.isInteger(Number(targetNumber)) &&
+      targetNumber >= 1001 &&
+      targetNumber <= 1200 &&
+      String(targetNumber).length <= 4;
+
+    if (isValidNumber) {
+      if (targetNumber > currentNumber) {
+        responseText += `\n🤔 你這 *${targetNumber}* 號還沒到，想訂閱就私訊偶，怕的是他。`;
+        const payload = `action=subscribe&target_number=${targetNumber}&group_chat_id=${ctx.chat.id}&user_message_id=${ctx.message.message_id}`;
+        const base64Payload = Buffer.from(payload).toString("base64");
+        const url = `https://t.me/${username}?start=${base64Payload}`;
+        return ctx.reply(responseText, {
+          parse_mode: "Markdown",
+          reply_to_message_id: ctx.message.message_id,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "🔔 私訊偶訂閱",
+                  url: url,
+                },
+              ],
+            ],
+          },
+        });
+      } else {
+        responseText += `\n🤡 這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
+      }
+    } else if (targetNumber) {
+      responseText += `\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`;
+    } else {
+      responseText += `\n\n想訂閱叫號？打 \`/number <你的號碼>\`，偶幫你記著，很ㄅㄧㄤˋ吧 ✨。`;
+    }
+
+    ctx.reply(responseText, {
+      parse_mode: "Markdown",
+      reply_to_message_id: ctx.message.message_id,
+    });
+  }
 });
 
 async function checkSubscriptions() {
