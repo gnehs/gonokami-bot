@@ -9,6 +9,29 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const salt = os.hostname() || "salt";
 const voteData = new JSONdb("./votes.json", { jsonSpaces: false });
+const subData = new JSONdb("./subscriptions.json", { jsonSpaces: false });
+
+// Migrate subscriptions from votes.json to subscriptions.json
+if (voteData.has("subscriptions")) {
+  const subscriptions = voteData.get("subscriptions");
+  if (
+    subscriptions &&
+    Array.isArray(subscriptions) &&
+    subscriptions.length > 0
+  ) {
+    subData.set("subscriptions", subscriptions);
+    voteData.delete("subscriptions");
+    console.log("✅ Subscriptions migrated to subscriptions.json");
+  } else if (
+    subscriptions &&
+    Array.isArray(subscriptions) &&
+    subscriptions.length === 0
+  ) {
+    voteData.delete("subscriptions");
+    console.log("✅ Removed empty subscriptions from votes.json");
+  }
+}
+
 function hash(str) {
   const hash = crypto.createHash("sha256");
   hash.update(str.toString() + salt, "utf8");
@@ -49,7 +72,7 @@ bot.command("number", async (ctx) => {
   const targetNumber = args[0];
   let responseText = `👑 哼嗯，現在號碼是 *${currentNumber}*，醬子。`;
 
-  const subscriptions = voteData.get("subscriptions") || [];
+  const subscriptions = subData.get("subscriptions") || [];
   const existingSub = subscriptions.find(
     (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
   );
@@ -132,7 +155,7 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
     });
   }
 
-  let subscriptions = voteData.get("subscriptions") || [];
+  let subscriptions = subData.get("subscriptions") || [];
   const existingSub = subscriptions.find(
     (s) => s.chat_id === chatId && s.user_id === userId
   );
@@ -153,7 +176,7 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
     created_at: Date.now(),
     message_id: message.message_id,
   });
-  voteData.set("subscriptions", subscriptions);
+  subData.set("subscriptions", subscriptions);
 
   await ctx.editMessageText(
     `${
@@ -178,7 +201,7 @@ bot.action(/subscribe_number_(\d+)/, async (ctx) => {
 
 bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
   const targetNumber = ctx.match[1];
-  let subscriptions = voteData.get("subscriptions") || [];
+  let subscriptions = subData.get("subscriptions") || [];
   const subIndex = subscriptions.findIndex(
     (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
   );
@@ -192,7 +215,7 @@ bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
 
   const sub = subscriptions[subIndex];
   subscriptions.splice(subIndex, 1);
-  voteData.set("subscriptions", subscriptions);
+  subData.set("subscriptions", subscriptions);
 
   const currentNumber = await getCurrentNumber();
 
@@ -232,7 +255,7 @@ bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
 });
 
 async function checkSubscriptions() {
-  let subscriptions = voteData.get("subscriptions") || [];
+  let subscriptions = subData.get("subscriptions") || [];
   if (subscriptions.length === 0) {
     return;
   }
@@ -268,7 +291,7 @@ async function checkSubscriptions() {
     }
   }
 
-  voteData.set("subscriptions", remainingSubscriptions);
+  subData.set("subscriptions", remainingSubscriptions);
 }
 
 setInterval(checkSubscriptions, 60 * 1000);
