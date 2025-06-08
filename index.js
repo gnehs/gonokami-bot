@@ -25,6 +25,17 @@ if (!fs.existsSync(dataDir)) {
 
 const voteData = new JsonFileDb("votes.json");
 const subData = new JsonFileDb("subscriptions.json");
+const usageLog = new JsonFileDb("usage.json");
+
+function logActivity(activity, data) {
+  const logs = usageLog.get("logs") || [];
+  logs.push({
+    timestamp: new Date().toISOString(),
+    activity,
+    ...data,
+  });
+  usageLog.set("logs", logs);
+}
 
 function hash(str) {
   const hash = crypto.createHash("sha256");
@@ -66,6 +77,11 @@ async function getCurrentNumber() {
 }
 
 bot.start(async (ctx) => {
+  logActivity("start", {
+    from: ctx.from,
+    chat: ctx.chat,
+    payload: ctx.payload,
+  });
   if (ctx.chat.type !== "private") {
     return;
   }
@@ -181,6 +197,11 @@ bot.start(async (ctx) => {
 });
 
 bot.command("number", async (ctx) => {
+  logActivity("number", {
+    from: ctx.from,
+    chat: ctx.chat,
+    text: ctx.message.text,
+  });
   ctx.telegram.sendChatAction(ctx.chat.id, "typing");
   let args = ctx.message.text.split(" ").slice(1);
 
@@ -351,6 +372,7 @@ async function checkSubscriptions() {
 
   for (const sub of subscriptions) {
     if (currentNumber >= sub.target_number) {
+      logActivity("subscription_triggered", { sub });
       bot.telegram.sendMessage(
         sub.chat_id,
         `喂～ 👑 @${sub.first_name} ，你訂的 ${sub.target_number} 號到了，怕的是他。還不快去！`,
@@ -359,6 +381,7 @@ async function checkSubscriptions() {
         }
       );
     } else if (Date.now() - sub.created_at > fiveHours) {
+      logActivity("subscription_expired", { sub });
       bot.telegram.sendMessage(
         sub.chat_id,
         `欸 👋 @${sub.first_name} ，你的 ${sub.target_number} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
@@ -378,6 +401,11 @@ setInterval(checkSubscriptions, 60 * 1000);
 
 // vote
 bot.command("vote", async (ctx) => {
+  logActivity("vote", {
+    from: ctx.from,
+    chat: ctx.chat,
+    text: ctx.message.text,
+  });
   let args = ctx.message.text.split(" ").slice(1);
   let voteTitle = args[0] ?? "今天ㄘ什麼 🤔";
   let byeOptions = ["偶不吃了 😠", "怕的是他 👑", "蓋被被 😴"];
@@ -410,6 +438,11 @@ bot.command("vote", async (ctx) => {
   });
 });
 bot.action(/stopvote_(.+)/, async (ctx) => {
+  logActivity("stopvote", {
+    from: ctx.from,
+    chat: ctx.chat,
+    match: ctx.match[0],
+  });
   let hashStr = ctx.match[1];
   if (hashStr == hash(ctx.update.callback_query.from.id)) {
     let poll = await ctx.telegram.stopPoll(
@@ -435,6 +468,11 @@ bot.action(/stopvote_(.+)/, async (ctx) => {
 
 // ramen vote
 bot.command("voteramen", async (ctx) => {
+  logActivity("voteramen", {
+    from: ctx.from,
+    chat: ctx.chat,
+    text: ctx.message.text,
+  });
   let args = ctx.message.text.split(" ").slice(1);
   let voteTitle = args[0] ?? "限定拉麵，點餐！🍜";
   let byeOptions = ["偶不吃了 😠", "怕的是他 👑", "蓋被被 😴"];
@@ -477,6 +515,10 @@ bot.command("voteramen", async (ctx) => {
 
 // watch user vote
 bot.on("poll_answer", async (ctx) => {
+  logActivity("poll_answer", {
+    from: ctx.from,
+    poll_answer: ctx.update.poll_answer,
+  });
   let pollAnswer = ctx.update.poll_answer;
   // update user
   let users = voteData.get("users") || {};
@@ -533,6 +575,11 @@ bot.on("poll_answer", async (ctx) => {
 });
 
 bot.action(/stopramenvote_(.+)/, async (ctx) => {
+  logActivity("stopramenvote", {
+    from: ctx.from,
+    chat: ctx.chat,
+    match: ctx.match[0],
+  });
   let hashStr = ctx.match[1];
   if (hashStr == hash(ctx.update.callback_query.from.id)) {
     let poll = await ctx.telegram.stopPoll(
