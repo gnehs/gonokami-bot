@@ -44,7 +44,16 @@ function hash(str) {
   return hash.digest("hex").slice(0, 8);
 }
 
+let numberCache = {
+  value: null,
+  timestamp: 0,
+};
+
 async function getCurrentNumber() {
+  const now = Date.now();
+  if (now - numberCache.timestamp < 60 * 1000 && numberCache.value !== null) {
+    return numberCache.value;
+  }
   try {
     const res = await fetch(
       "https://dxc.tagfans.com/mighty?_field%5B%5D=*&%24gid=10265&%24description=anouncingNumbers"
@@ -56,7 +65,12 @@ async function getCurrentNumber() {
       return null;
     }
 
-    return JSON.parse(res[0].detail_json).selections["目前號碼"];
+    const currentNumber = JSON.parse(res[0].detail_json).selections["目前號碼"];
+    numberCache = {
+      value: currentNumber,
+      timestamp: now,
+    };
+    return currentNumber;
   } catch (e) {
     console.error("Failed to get current number:", e);
     return null;
