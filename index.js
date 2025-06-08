@@ -194,12 +194,22 @@ bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
   subscriptions.splice(subIndex, 1);
   voteData.set("subscriptions", subscriptions);
 
-  const message = ctx.update.callback_query.message;
-  const originalText = message.text.split("\n\n")[0];
+  const currentNumber = await getCurrentNumber();
 
-  await ctx.editMessageText(originalText, {
-    parse_mode: "Markdown",
-    reply_markup: {
+  if (currentNumber === null) {
+    await ctx.editMessageText(
+      `哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
+      { parse_mode: "Markdown" }
+    );
+    return ctx.answerCbQuery(`🚫 ${sub.target_number} 號，偶幫你取消了，886。`);
+  }
+
+  let responseText = `哼嗯，現在號碼是 *${currentNumber}*，醬子。`;
+  let replyMarkup = undefined;
+
+  if (Number(targetNumber) > currentNumber) {
+    responseText += `\n你這 *${targetNumber}* 號還沒到，急什麼。怕的是他。`;
+    replyMarkup = {
       inline_keyboard: [
         [
           {
@@ -208,8 +218,16 @@ bot.action(/unsubscribe_action_(\d+)/, async (ctx) => {
           },
         ],
       ],
-    },
+    };
+  } else {
+    responseText += `\n這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
+  }
+
+  await ctx.editMessageText(responseText, {
+    parse_mode: "Markdown",
+    reply_markup: replyMarkup,
   });
+
   await ctx.answerCbQuery(`🚫 ${sub.target_number} 號，偶幫你取消了，886。`);
 });
 
