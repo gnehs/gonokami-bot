@@ -7,6 +7,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
+    "prod:start": "pm2 start ecosystem.config.cjs",
+    "prod:stop": "pm2 delete ecosystem.config.cjs",
+    "prod:logs": "pm2 logs gonokami-bot",
+    "prod:monit": "pm2 monit",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -16,5 +20,8 @@
   "dependencies": {
     "dotenv": "^16.5.0",
     "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "pm2": "^6.0.8"
   }
 }
