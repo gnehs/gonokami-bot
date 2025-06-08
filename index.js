@@ -502,7 +502,10 @@ function updatePollData(id, data) {
   polls[id] = poll;
   voteData.set("polls", polls);
 }
-
+bot.catch((err, ctx) => {
+  console.error(err);
+  console.error(ctx);
+});
 bot.launch();
 
 // Enable graceful stop
