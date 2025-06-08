@@ -16,4 +16,4 @@ COPY --from=deps /app/node_modules ./node_modules
 RUN mkdir -p data
 RUN echo {} > data/subscriptions.json
 RUN echo {} > data/votes.json
-CMD ["pnpm", "prod:start"]
+CMD ["pnpm", "start"]
