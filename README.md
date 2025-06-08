@@ -52,6 +52,23 @@ pnpm start
 pnpm dev
 ```
 
+## 🐳 用 Docker 部署偶
+
+覺得上面的方法很遜？哼嗯，偶也懂 Docker，怕的是他。
+
+1.  **把偶打包起來：**
+
+    ```bash
+    docker build -t gonokami-bot .
+    ```
+
+2.  **讓偶開始曬太陽：**
+    記得把你的秘密鑰匙 (`BOT_TOKEN`) 傳給偶，不然偶會森七七。
+
+    ```bash
+    docker run -d --name gonokami-bot -e BOT_TOKEN="你的機器人Token" --restart always gonokami-bot
+    ```
+
 ---
 
 _Zzz ～怕的是我～ Zzz ～_

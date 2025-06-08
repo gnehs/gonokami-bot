@@ -13,6 +13,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY . .
 COPY --from=deps /app/node_modules ./node_modules
-RUN echo {} > subscriptions.json
-RUN echo {} > votes.json
+RUN mkdir -p data
+RUN echo {} > data/subscriptions.json
+RUN echo {} > data/votes.json
 CMD [ "pnpm", "start" ]

@@ -4,12 +4,19 @@ import crypto from "crypto";
 import os from "os";
 import JSONdb from "simple-json-db";
 import fetch from "node-fetch";
+import fs from "fs";
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const salt = os.hostname() || "salt";
-const voteData = new JSONdb("./votes.json", { jsonSpaces: false });
-const subData = new JSONdb("./subscriptions.json", { jsonSpaces: false });
+
+const dataDir = "./data";
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const voteData = new JSONdb("./data/votes.json", { jsonSpaces: false });
+const subData = new JSONdb("./data/subscriptions.json", { jsonSpaces: false });
 
 // Migrate subscriptions from votes.json to subscriptions.json
 if (voteData.has("subscriptions")) {
