@@ -15,8 +15,8 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const voteData = new JSONdb("./data/votes.json", { jsonSpaces: false });
-const subData = new JSONdb("./data/subscriptions.json", { jsonSpaces: false });
+const voteData = new JSONdb("./data/votes.json");
+const subData = new JSONdb("./data/subscriptions.json");
 
 // Migrate subscriptions from votes.json to subscriptions.json
 if (voteData.has("subscriptions")) {
