@@ -61,6 +61,20 @@ bot.command("number", async (ctx) => {
   if (isValidNumber) {
     if (targetNumber > currentNumber) {
       responseText += `\n✅ 您輸入的號碼尚未被叫到`;
+      return ctx.reply(responseText, {
+        parse_mode: "Markdown",
+        reply_to_message_id: ctx.message.message_id,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🔔 訂閱此號碼",
+                callback_data: `subscribe_number_${targetNumber}`,
+              },
+            ],
+          ],
+        },
+      });
     } else {
       responseText += `\n✖️ 您輸入的號碼牌已過號`;
     }
@@ -76,67 +90,54 @@ bot.command("number", async (ctx) => {
   });
 });
 
-bot.command("subscribe", async (ctx) => {
-  let args = ctx.message.text.split(" ").slice(1);
-  const targetNumber = args[0];
-
-  const isValidNumber =
-    targetNumber &&
-    !isNaN(targetNumber) &&
-    Number.isInteger(Number(targetNumber)) &&
-    targetNumber >= 1001 &&
-    targetNumber <= 1200 &&
-    String(targetNumber).length <= 4;
-
-  if (!isValidNumber) {
-    return ctx.reply("請輸入有效的號碼（1001-1200）", {
-      reply_to_message_id: ctx.message.message_id,
-    });
-  }
+bot.action(/subscribe_number_(\d+)/, async (ctx) => {
+  const targetNumber = ctx.match[1];
+  const userId = ctx.from.id;
+  const chatId = ctx.chat.id;
+  const message = ctx.update.callback_query.message;
 
   const currentNumber = await getCurrentNumber();
   if (currentNumber === null) {
-    return ctx.reply("無法取得目前號碼，請稍後再試", {
-      reply_to_message_id: ctx.message.message_id,
+    return ctx.answerCbQuery("❌ 無法取得目前號碼，請稍後再試", {
+      show_alert: true,
     });
   }
 
   if (targetNumber <= currentNumber) {
-    return ctx.reply("此號碼已過號", {
-      reply_to_message_id: ctx.message.message_id,
-    });
+    await ctx.editMessageReplyMarkup(undefined);
+    return ctx.answerCbQuery("❌ 此號碼已過號", { show_alert: true });
   }
 
   let subscriptions = voteData.get("subscriptions") || [];
   const existingSub = subscriptions.find(
-    (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
+    (s) => s.chat_id === chatId && s.user_id === userId
   );
 
   if (existingSub) {
-    return ctx.reply(
-      `您已經訂閱了 ${existingSub.target_number} 號，請先用 /unsubscribe 取消`,
-      {
-        reply_to_message_id: ctx.message.message_id,
-      }
+    await ctx.editMessageReplyMarkup(undefined);
+    return ctx.answerCbQuery(
+      `⚠️ 您已經訂閱了 ${existingSub.target_number} 號，請先用 /unsubscribe 取消`,
+      { show_alert: true }
     );
   }
 
   subscriptions.push({
-    chat_id: ctx.chat.id,
-    user_id: ctx.from.id,
+    chat_id: chatId,
+    user_id: userId,
     first_name: ctx.from.first_name,
     target_number: Number(targetNumber),
     created_at: Date.now(),
-    message_id: ctx.message.message_id,
+    message_id: message.message_id,
   });
   voteData.set("subscriptions", subscriptions);
 
-  ctx.reply(
-    `✅ 已訂閱 ${targetNumber} 號，叫到時會通知您。\n或可使用 /unsubscribe 取消訂閱`,
+  await ctx.editMessageText(
+    `${message.text}\n\n✅ 已訂閱 ${targetNumber} 號，叫到時會通知您。\n可使用 /unsubscribe 取消訂閱`,
     {
-      reply_to_message_id: ctx.message.message_id,
+      parse_mode: "Markdown",
     }
   );
+  await ctx.answerCbQuery(`✅ 已訂閱 ${targetNumber} 號`);
 });
 
 bot.command("unsubscribe", async (ctx) => {
