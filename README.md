@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/avater.png" width="200" />
+  <img src="assets/avater.png" width="200" style="border-radius: 32px;" />
 </div>
 
 # 👑 榮勾斯揪拉麵精靈
