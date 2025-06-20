@@ -1,21 +1,27 @@
 import "dotenv/config";
-import { Telegraf } from "telegraf";
+import { Bot, Context, GrammyError } from "grammy";
+
 import crypto from "crypto";
 import os from "os";
 import JsonFileDb from "./utils/db.js";
 import fs from "fs";
 
-let botUsername;
-async function getBotUsername(ctx) {
+// ----------------- Environment Validation -----------------
+if (!process.env.BOT_TOKEN) {
+  console.error("❌ BOT_TOKEN environment variable is missing! Bot will exit.");
+  process.exit(1);
+}
+
+let botUsername: null | string;
+async function getBotUsername(ctx: Context) {
   if (!botUsername) {
-    const me = await ctx.telegram.getMe();
+    const me = await ctx.api.getMe();
     botUsername = me.username;
   }
   return botUsername;
 }
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
-
+const bot = new Bot(process.env.BOT_TOKEN!);
 const salt = os.hostname() || "salt";
 
 const dataDir = "./data";
@@ -27,15 +33,15 @@ const voteData = new JsonFileDb("votes.json");
 const subData = new JsonFileDb("subscriptions.json");
 const usageLog = new JsonFileDb("usage.json");
 
-function logActivity(activity, data) {
+function logActivity(activity: string, data: Record<string, unknown>): void {
   const logEntry = {
     timestamp: new Date().toISOString(),
     activity,
     ...data,
   };
-  const logs = usageLog.get("logs") || [];
+  const logs: unknown[] = (usageLog.get("logs") as unknown[]) ?? [];
   logs.push(logEntry);
-  usageLog.set("logs", logs);
+  usageLog.set("logs", logs as unknown as Record<string, unknown>[]);
   console.log(logEntry);
 }
 
@@ -78,26 +84,79 @@ async function getCurrentNumber() {
   }
 }
 
-bot.start(async (ctx) => {
+// ----------------- Type Definitions -----------------
+interface Subscription {
+  chat_id: number;
+  user_id: number;
+  first_name: string;
+  target_number: number;
+  created_at: number;
+  message_id: number;
+}
+
+// A helper that safely replies and falls back if the original message cannot be replied to.
+async function safeReply(
+  ctx: Context,
+  text: string,
+  options: Parameters<Context["reply"]>[1] = {}
+) {
+  try {
+    return await ctx.reply(text, options as any);
+  } catch (err) {
+    if (
+      err instanceof GrammyError &&
+      err.description.includes("message to be replied not found")
+    ) {
+      const opts = { ...(options || {}) } as Record<string, unknown>;
+      delete opts.reply_to_message_id;
+      return await ctx.api.sendMessage(ctx.chat.id, text, opts as any);
+    }
+    throw err;
+  }
+}
+
+function safeSendMessage(
+  botInstance: Bot,
+  chatId: number,
+  text: string,
+  options:
+    | Parameters<Context["api"]["sendMessage"]>[2]
+    | Record<string, unknown> = {}
+) {
+  return botInstance.api
+    .sendMessage(chatId, text, options as any)
+    .catch((err) => {
+      if (
+        err instanceof GrammyError &&
+        err.description.includes("message to be replied not found")
+      ) {
+        const opts = { ...(options || {}) } as Record<string, unknown>;
+        delete opts.reply_to_message_id;
+        return botInstance.api.sendMessage(chatId, text, opts as any);
+      }
+      throw err;
+    });
+}
+
+bot.command("start", async (ctx) => {
+  const payloadStr = ctx.message?.text?.split(" ").slice(1).join(" ") || "";
   logActivity("start", {
     from: ctx.from,
     chat: ctx.chat,
-    payload: ctx.payload,
+    payload: payloadStr,
   });
   if (ctx.chat.type !== "private") {
     return;
   }
 
-  const payload = ctx.payload;
-
-  if (!payload) {
+  if (!payloadStr) {
     return ctx.reply(
       "安安，榮勾斯揪來了，怕的是他。有事嗎？\n想訂閱叫號可以打 `/number <你的號碼>`，偶會幫你訂閱，很ㄅㄧㄤˋ吧 ✨。"
     );
   }
 
   try {
-    const decodedPayload = Buffer.from(payload, "base64").toString("utf8");
+    const decodedPayload = Buffer.from(payloadStr, "base64").toString("utf8");
     const params = Object.fromEntries(
       new URLSearchParams(decodedPayload).entries()
     );
@@ -123,7 +182,8 @@ bot.start(async (ctx) => {
         return ctx.reply("🤡 都跟你說過號了，你很奇欸。");
       }
 
-      let subscriptions = subData.get("subscriptions") || [];
+      const subscriptions: Subscription[] =
+        (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
       const existingSub = subscriptions.find(
         (s) => s.chat_id === chatId && s.user_id === userId
       );
@@ -148,7 +208,7 @@ bot.start(async (ctx) => {
         `👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
         { parse_mode: "Markdown" }
       );
-      await bot.telegram.sendMessage(
+      await bot.api.sendMessage(
         chatId,
         `✅ ${ctx.from.first_name} 已訂閱 ${targetNumber} 號。`,
         { reply_to_message_id: Number(user_message_id) }
@@ -157,7 +217,8 @@ bot.start(async (ctx) => {
       const userId = ctx.from.id;
       const chatId = Number(group_chat_id);
 
-      let subscriptions = subData.get("subscriptions") || [];
+      const subscriptions: Subscription[] =
+        (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
       const subIndex = subscriptions.findIndex(
         (s) => s.chat_id === chatId && s.user_id === userId
       );
@@ -177,19 +238,12 @@ bot.start(async (ctx) => {
 
       if (group_message_id) {
         const unsubscribedText = `✅ @${ctx.from.first_name} 已取消 *${sub.target_number}* 號的訂閱了。`;
-        try {
-          await bot.telegram.editMessageText(
-            chatId,
-            Number(group_message_id),
-            undefined,
-            unsubscribedText,
-            { parse_mode: "Markdown" }
-          );
-        } catch (e) {
-          if (!e.message.includes("message is not modified")) {
-            console.error("Failed to edit message on unsubscribe:", e);
-          }
-        }
+        await bot.api.editMessageText(
+          chatId,
+          Number(group_message_id),
+          unsubscribedText,
+          { parse_mode: "Markdown" }
+        );
       }
     }
   } catch (e) {
@@ -204,7 +258,7 @@ bot.command("number", async (ctx) => {
     chat: ctx.chat,
     text: ctx.message.text,
   });
-  ctx.telegram.sendChatAction(ctx.chat.id, "typing");
+  ctx.api.sendChatAction(ctx.chat.id, "typing");
   let args = ctx.message.text.split(" ").slice(1);
 
   const currentNumber = await getCurrentNumber();
@@ -220,7 +274,8 @@ bot.command("number", async (ctx) => {
 
   // Private Chat Logic
   if (ctx.chat.type === "private") {
-    const subscriptions = subData.get("subscriptions") || [];
+    const subscriptions: Subscription[] =
+      (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
     const existingSub = subscriptions.find(
       (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
     );
@@ -236,34 +291,35 @@ bot.command("number", async (ctx) => {
 
     if (existingSub) {
       responseText += `\n✅ 你已經訂閱 *${existingSub.target_number}* 號了。想取消？打 \`/number\` 就好，醬子。`;
-      return ctx.reply(responseText, {
+      return safeReply(ctx, responseText, {
         parse_mode: "Markdown",
         reply_to_message_id: ctx.message.message_id,
       });
     }
 
+    const numTarget = Number(targetNumber);
     const isValidNumber =
-      targetNumber &&
-      !isNaN(targetNumber) &&
-      Number.isInteger(Number(targetNumber)) &&
-      targetNumber >= 1001 &&
-      targetNumber <= 1200 &&
-      String(targetNumber).length <= 4;
+      targetNumber !== undefined &&
+      !Number.isNaN(numTarget) &&
+      Number.isInteger(numTarget) &&
+      numTarget >= 1001 &&
+      numTarget <= 1200 &&
+      String(numTarget).length <= 4;
 
     if (isValidNumber) {
-      if (targetNumber > currentNumber) {
+      if (numTarget > currentNumber) {
         subscriptions.push({
           chat_id: ctx.chat.id,
           user_id: ctx.from.id,
           first_name: ctx.from.first_name,
-          target_number: Number(targetNumber),
+          target_number: numTarget,
           created_at: Date.now(),
           message_id: ctx.message.message_id,
         });
         subData.set("subscriptions", subscriptions);
-        responseText += `\n👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。想取消再打一次 \`/number\` 就好。`;
+        responseText += `\n👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。想取消再打一次 \`/number\` 就好。`;
       } else {
-        responseText += `\n🤡 這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
+        responseText += `\n🤡 這位同學，*${numTarget}* 已經過了，你很奇欸。`;
       }
     } else if (targetNumber) {
       responseText += `\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`;
@@ -271,14 +327,15 @@ bot.command("number", async (ctx) => {
       responseText += `\n\n想訂閱叫號？打 \`/number <你的號碼>\`，偶幫你記著，很ㄅㄧㄤˋ吧 ✨。`;
     }
 
-    return ctx.reply(responseText, {
+    return safeReply(ctx, responseText, {
       parse_mode: "Markdown",
       reply_to_message_id: ctx.message.message_id,
     });
   }
   // Group Chat Logic
   else {
-    const subscriptions = subData.get("subscriptions") || [];
+    const subscriptions: Subscription[] =
+      (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
     const existingSub = subscriptions.find(
       (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
     );
@@ -286,7 +343,7 @@ bot.command("number", async (ctx) => {
 
     if (existingSub) {
       responseText += `\n✅ 你訂閱的 *${existingSub.target_number}* 號偶記下了，怕的是他。叫到再跟你說，安安。`;
-      const sentMessage = await ctx.reply(responseText, {
+      const sentMessage = await safeReply(ctx, responseText, {
         parse_mode: "Markdown",
         reply_to_message_id: ctx.message.message_id,
       });
@@ -295,39 +352,41 @@ bot.command("number", async (ctx) => {
       const base64Payload = Buffer.from(payload).toString("base64");
       const url = `https://t.me/${username}?start=${base64Payload}`;
 
-      await ctx.telegram.editMessageReplyMarkup(
+      await ctx.api.editMessageReplyMarkup(
         ctx.chat.id,
         sentMessage.message_id,
-        undefined,
         {
-          inline_keyboard: [
-            [
-              {
-                text: "🚫 私訊偶取消",
-                url: url,
-              },
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "🚫 私訊偶取消",
+                  url,
+                },
+              ],
             ],
-          ],
+          },
         }
       );
       return;
     }
 
+    const numTargetGrp = Number(targetNumber);
     const isValidNumber =
-      targetNumber &&
-      !isNaN(targetNumber) &&
-      Number.isInteger(Number(targetNumber)) &&
-      targetNumber >= 1001 &&
-      targetNumber <= 1200 &&
-      String(targetNumber).length <= 4;
+      targetNumber !== undefined &&
+      !Number.isNaN(numTargetGrp) &&
+      Number.isInteger(numTargetGrp) &&
+      numTargetGrp >= 1001 &&
+      numTargetGrp <= 1200 &&
+      String(numTargetGrp).length <= 4;
 
     if (isValidNumber) {
-      if (targetNumber > currentNumber) {
-        responseText += `\n🤔 你這 *${targetNumber}* 號還沒到，想訂閱就私訊偶，怕的是他。`;
-        const payload = `action=subscribe&target_number=${targetNumber}&group_chat_id=${ctx.chat.id}&user_message_id=${ctx.message.message_id}`;
+      if (numTargetGrp > currentNumber) {
+        responseText += `\n🤔 你這 *${numTargetGrp}* 號還沒到，想訂閱就私訊偶，怕的是他。`;
+        const payload = `action=subscribe&target_number=${numTargetGrp}&group_chat_id=${ctx.chat.id}&user_message_id=${ctx.message.message_id}`;
         const base64Payload = Buffer.from(payload).toString("base64");
         const url = `https://t.me/${username}?start=${base64Payload}`;
-        return ctx.reply(responseText, {
+        return safeReply(ctx, responseText, {
           parse_mode: "Markdown",
           reply_to_message_id: ctx.message.message_id,
           reply_markup: {
@@ -335,14 +394,14 @@ bot.command("number", async (ctx) => {
               [
                 {
                   text: "🔔 私訊偶訂閱",
-                  url: url,
+                  url,
                 },
               ],
             ],
           },
         });
       } else {
-        responseText += `\n🤡 這位同學，*${targetNumber}* 已經過了，你很奇欸。`;
+        responseText += `\n🤡 這位同學，*${numTargetGrp}* 已經過了，你很奇欸。`;
       }
     } else if (targetNumber) {
       responseText += `\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`;
@@ -350,7 +409,7 @@ bot.command("number", async (ctx) => {
       responseText += `\n\n想訂閱叫號？打 \`/number <你的號碼>\`，偶幫你記著，很ㄅㄧㄤˋ吧 ✨。`;
     }
 
-    ctx.reply(responseText, {
+    safeReply(ctx, responseText, {
       parse_mode: "Markdown",
       reply_to_message_id: ctx.message.message_id,
     });
@@ -358,7 +417,8 @@ bot.command("number", async (ctx) => {
 });
 
 async function checkSubscriptions() {
-  let subscriptions = subData.get("subscriptions") || [];
+  const subscriptions: Subscription[] =
+    (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
   if (subscriptions.length === 0) {
     return;
   }
@@ -375,7 +435,8 @@ async function checkSubscriptions() {
   for (const sub of subscriptions) {
     if (currentNumber >= sub.target_number) {
       logActivity("subscription_triggered", { sub });
-      bot.telegram.sendMessage(
+      safeSendMessage(
+        bot,
         sub.chat_id,
         `喂～ 👑 @${sub.first_name} ，你訂的 ${sub.target_number} 號到了，怕的是他。還不快去！`,
         {
@@ -384,7 +445,8 @@ async function checkSubscriptions() {
       );
     } else if (Date.now() - sub.created_at > fiveHours) {
       logActivity("subscription_expired", { sub });
-      bot.telegram.sendMessage(
+      safeSendMessage(
+        bot,
         sub.chat_id,
         `欸 👋 @${sub.first_name} ，你的 ${sub.target_number} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
         {
@@ -415,7 +477,8 @@ bot.command("vote", async (ctx) => {
     ? args[1]
     : byeOptions[Math.floor(Math.random() * byeOptions.length)];
   let voteOptions = ["+1", "+2", "+4", byeOption];
-  let data = await ctx.replyWithPoll(voteTitle, voteOptions, {
+  const pollOptions = voteOptions.map((text) => ({ text }));
+  const data = await ctx.api.sendPoll(ctx.chat.id, voteTitle, pollOptions, {
     allows_multiple_answers: true,
     is_anonymous: false,
     reply_to_message_id: ctx.message.message_id,
@@ -439,7 +502,8 @@ bot.command("vote", async (ctx) => {
     votes: {},
   });
 });
-bot.action(/stopvote_(.+)/, async (ctx) => {
+
+bot.callbackQuery(/stopvote_(.+)/, async (ctx) => {
   logActivity("stopvote", {
     from: ctx.from,
     chat: ctx.chat,
@@ -447,24 +511,22 @@ bot.action(/stopvote_(.+)/, async (ctx) => {
   });
   let hashStr = ctx.match[1];
   if (hashStr == hash(ctx.update.callback_query.from.id)) {
-    let poll = await ctx.telegram.stopPoll(
+    let poll = await ctx.api.stopPoll(
       ctx.update.callback_query.message.chat.id,
       ctx.update.callback_query.message.message_id
     );
-    let count = poll.options
-      .slice(0, -1)
-      .reduce(
-        (acc, cur) => acc + cur.voter_count * cur.text.replace("+", ""),
-        0
-      );
-    ctx.replyWithMarkdownV2(
-      `*${poll.question}* 投票結束，醬子共 ${count} 個人要ㄘ。🥳`,
-      {
-        reply_to_message_id: ctx.update.callback_query.message.message_id,
-      }
-    );
+    const count = poll.options.slice(0, -1).reduce((acc, cur) => {
+      const multiplier = Number(cur.text.replace("+", "").trim());
+      return acc + cur.voter_count * multiplier;
+    }, 0);
+    ctx.reply(`*${poll.question}* 投票結束，醬子共 ${count} 個人要ㄘ。🥳`, {
+      parse_mode: "MarkdownV2",
+      reply_to_message_id: ctx.update.callback_query.message.message_id,
+    });
+
+    updatePollData(poll.id, poll);
   } else {
-    ctx.answerCbQuery("🗣️ 告老師喔，只有發起人才能結束投票，你很奇欸。");
+    ctx.answerCallbackQuery("🗣️ 告老師喔，只有發起人才能結束投票，你很奇欸。");
   }
 });
 
@@ -489,21 +551,27 @@ bot.command("voteramen", async (ctx) => {
     "+2 | ✨ 超值",
     byeOption,
   ];
-  let data = await ctx.replyWithPoll(voteTitle, voteOptions, {
-    allows_multiple_answers: true,
-    is_anonymous: false,
-    reply_to_message_id: ctx.message.message_id,
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "👥 0 人 | 🚫 結束投票",
-            callback_data: `stopramenvote_${hash(ctx.message.from.id)}`,
-          },
+  const pollOptionsRamen = voteOptions.map((text) => ({ text }));
+  const data = await ctx.api.sendPoll(
+    ctx.chat.id,
+    voteTitle,
+    pollOptionsRamen,
+    {
+      allows_multiple_answers: true,
+      is_anonymous: false,
+      reply_to_message_id: ctx.message.message_id,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "👥 0 人 | 🚫 結束投票",
+              callback_data: `stopramenvote_${hash(ctx.message.from.id)}`,
+            },
+          ],
         ],
-      ],
-    },
-  });
+      },
+    }
+  );
   updatePollData(data.poll.id, {
     ...data.poll,
     chat_id: ctx.chat.id,
@@ -521,7 +589,7 @@ bot.on("poll_answer", async (ctx) => {
     from: ctx.from,
     poll_answer: ctx.update.poll_answer,
   });
-  let pollAnswer = ctx.update.poll_answer;
+  const pollAnswer = ctx.update.poll_answer;
   // update user
   let users = voteData.get("users") || {};
   users[pollAnswer.user.id] = {
@@ -533,12 +601,12 @@ bot.on("poll_answer", async (ctx) => {
   let polls = voteData.get("polls") || {};
   let poll = polls[pollAnswer.poll_id];
   if (!poll) return;
-  let options = pollAnswer.option_ids;
-  poll.votes[pollAnswer.user.id] = options;
+  const optionIds: number[] = pollAnswer.option_ids;
+  poll.votes[pollAnswer.user.id] = optionIds;
   updatePollData(pollAnswer.poll_id, poll);
   console.log(
     `[vote] ${pollAnswer.user?.first_name} voted ${
-      options.length ? options : "retract"
+      optionIds.length ? optionIds : "retract"
     } in poll ${poll.question}(${pollAnswer.poll_id}) at ${poll.chat_name}(${
       poll.chat_id
     })`
@@ -549,16 +617,13 @@ bot.on("poll_answer", async (ctx) => {
   if (!isRamenVote) return;
 
   const totalCount = Object.values(poll.votes)
-    .flatMap((options) => options)
-    .map((optionId) => (optionId % 2) + 1)
+    .flatMap((opts) => opts as number[])
+    .map((optionId: number) => (optionId % 2) + 1)
     .reduce((sum, quantity) => sum + quantity, 0);
 
   try {
-    await bot.telegram.editMessageReplyMarkup(
-      poll.chat_id,
-      poll.message_id,
-      undefined,
-      {
+    await ctx.api.editMessageReplyMarkup(poll.chat_id, poll.message_id, {
+      reply_markup: {
         inline_keyboard: [
           [
             {
@@ -567,8 +632,8 @@ bot.on("poll_answer", async (ctx) => {
             },
           ],
         ],
-      }
-    );
+      },
+    });
   } catch (e) {
     if (!e.message.includes("message is not modified")) {
       console.error("Failed to edit reply markup for voter count:", e);
@@ -576,7 +641,7 @@ bot.on("poll_answer", async (ctx) => {
   }
 });
 
-bot.action(/stopramenvote_(.+)/, async (ctx) => {
+bot.callbackQuery(/stopramenvote_(.+)/, async (ctx) => {
   logActivity("stopramenvote", {
     from: ctx.from,
     chat: ctx.chat,
@@ -584,7 +649,7 @@ bot.action(/stopramenvote_(.+)/, async (ctx) => {
   });
   let hashStr = ctx.match[1];
   if (hashStr == hash(ctx.update.callback_query.from.id)) {
-    let poll = await ctx.telegram.stopPoll(
+    let poll = await ctx.api.stopPoll(
       ctx.update.callback_query.message.chat.id,
       ctx.update.callback_query.message.message_id
     );
@@ -595,30 +660,33 @@ bot.action(/stopramenvote_(.+)/, async (ctx) => {
     }
     responseText += `———\n`;
     responseText += `共 ${count} 個人，醬子。🥳`;
-    ctx.replyWithMarkdownV2(responseText, {
+    ctx.reply(responseText, {
+      parse_mode: "MarkdownV2",
       reply_to_message_id: ctx.update.callback_query.message.message_id,
     });
 
     updatePollData(poll.id, poll);
   } else {
-    ctx.answerCbQuery("🗣️ 告老師喔，只有發起人才能結束投票，你很奇欸。");
+    ctx.answerCallbackQuery("🗣️ 告老師喔，只有發起人才能結束投票，你很奇欸。");
   }
 });
 
 function parsePollResult(poll) {
-  let options = [
-    ...new Set(
-      poll.options.slice(0, -1).map((x) => x.text.split("|")[1].trim())
-    ),
-  ];
-  let result = {};
-  options.forEach((x) => (result[x] = 0));
-  poll.options.slice(0, -1).forEach((x) => {
-    let option = x.text.split("|")[1].trim();
-    result[option] +=
-      x.voter_count * x.text.replace("+", "").split("|")[0].trim();
+  const optionsArr: string[] = Array.from(
+    new Set(poll.options.slice(0, -1).map((x) => x.text.split("|")[1].trim()))
+  );
+  const result: Record<string, number> = {};
+  optionsArr.forEach((opt) => {
+    result[opt] = 0;
   });
-  let count = Object.values(result).reduce((acc, cur) => acc + cur, 0);
+  poll.options
+    .slice(0, -1)
+    .forEach((x: { text: string; voter_count: number }) => {
+      let option = x.text.split("|")[1].trim();
+      const multiplier = Number(x.text.replace("+", "").split("|")[0].trim());
+      result[option] += x.voter_count * multiplier;
+    });
+  const count = Object.values(result).reduce((acc, cur) => acc + cur, 0);
   return {
     count,
     result,
@@ -640,8 +708,8 @@ function updatePollData(id, data) {
   polls[id] = poll;
   voteData.set("polls", polls);
 }
-await bot.launch();
 
+bot.start();
 // Enable graceful stop
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+process.once("SIGINT", () => bot.stop());
+process.once("SIGTERM", () => bot.stop());

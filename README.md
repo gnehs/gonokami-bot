@@ -18,27 +18,34 @@
 
 想讓偶為你服務？哼嗯，算你識貨。照著下面做，不要兩光。
 
-1.  **把偶的城堡複製回去：**
+1. **把偶的城堡複製回去：**
 
-    ```bash
-    git clone https://github.com/gnehs/gonokami-bot.git
-    cd gonokami-bot
-    ```
+   ```bash
+   git clone https://github.com/gnehs/gonokami-bot.git
+   cd gonokami-bot
+   ```
 
-2.  **安裝需要的東西：**
-    偶只用 pnpm，其他的偶看不上眼，很 SPP。
+2. **安裝需要的東西：** 偶只用 pnpm，其他的偶看不上眼，很 SPP。
 
-    ```bash
-    pnpm install
-    ```
+   ```bash
+   pnpm install
+   ```
 
-3.  **設定你的秘密鑰匙：**
-    你需要一個 `.env` 檔案來放你的 Telegram Bot Token。告老師喔，這個不要給別人看到。
-    ```
-    BOT_TOKEN=你的機器人Token
-    ```
+3. **設定你的秘密鑰匙：** 建一個 `.env` 檔案放你的 Telegram Bot Token。
 
-## 🚀 啟動偶
+   ```env
+   BOT_TOKEN=你的機器人Token
+   ```
+
+4. **（選擇）編譯 TypeScript：** 若要跑純 JS production 版本，先執行
+
+   ```bash
+   pnpm run build   # 會把檔案丟到 dist/
+   ```
+
+---
+
+## 🚀 啟動偶（開發模式）
 
 好了嗎？好了就啟動偶，讓大家看看偶的 je ne sais quoi。
 
@@ -56,7 +63,7 @@ pnpm dev
 
 覺得上面的方法很遜？哼嗯，偶也懂 Docker，怕的是他。
 
-1.  **把偶打包起來：**
+1.  **把偶打包起來（multi-stage build 會自動編譯 TypeScript）:**
 
     ```bash
     docker build -t gonokami-bot .
@@ -72,3 +79,10 @@ pnpm dev
 ---
 
 _Zzz ～怕的是我～ Zzz ～_
+
+## 🏭 建構 production 版
+
+```bash
+pnpm run build
+node dist/bot.js
+```

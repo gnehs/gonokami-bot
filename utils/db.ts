@@ -7,28 +7,31 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-class JsonFileDb {
-  constructor(fileName) {
+class JsonFileDb<T extends Record<string, unknown> = Record<string, unknown>> {
+  private filePath: string;
+  private _data: T;
+
+  constructor(fileName: string) {
     this.filePath = path.join(dataDir, fileName);
-    this._data = {};
+    this._data = {} as T;
     this._readData();
   }
 
-  _readData() {
+  private _readData(): void {
     try {
       if (fs.existsSync(this.filePath)) {
         const jsonString = fs.readFileSync(this.filePath, "utf8");
         this._data = JSON.parse(jsonString);
       } else {
-        this._data = {};
+        this._data = {} as T;
       }
     } catch (e) {
       console.error(`Error reading or parsing ${this.filePath}`, e);
-      this._data = {};
+      this._data = {} as T;
     }
   }
 
-  _writeData() {
+  private _writeData(): void {
     const tempFilePath = this.filePath + ".tmp";
     try {
       fs.writeFileSync(tempFilePath, JSON.stringify(this._data), "utf8");
@@ -45,22 +48,22 @@ class JsonFileDb {
     }
   }
 
-  get(key) {
-    this._readData(); // always get fresh data
+  get<K extends keyof T>(key: K): T[K] {
+    this._readData();
     return this._data[key];
   }
 
-  set(key, value) {
+  set<K extends keyof T>(key: K, value: T[K]): void {
     this._data[key] = value;
     this._writeData();
   }
 
-  has(key) {
-    this._readData(); // always get fresh data
+  has(key: keyof T): boolean {
+    this._readData();
     return key in this._data;
   }
 
-  delete(key) {
+  delete(key: keyof T): boolean {
     this._readData();
     if (key in this._data) {
       delete this._data[key];
@@ -70,8 +73,8 @@ class JsonFileDb {
     return false;
   }
 
-  all() {
-    this._readData(); // always get fresh data
+  all(): T {
+    this._readData();
     return this._data;
   }
 }
