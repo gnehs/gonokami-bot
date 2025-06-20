@@ -76,6 +76,15 @@ pnpm dev
     docker run -d --name gonokami-bot -e BOT_TOKEN="你的機器人Token" --restart always gonokami-bot
     ```
 
+> ⚠️ 若你使用 _node:22-alpine_ / _node:24-alpine_ 等新版映像，或在啟動時看到 `Network request for 'getMe' failed!`、`ETIMEDOUT` 等訊息，很可能是壞掉的 IPv6 造成連線失敗。可以在 `docker run` 時加上一行，直接關閉 container 內的 IPv6：
+
+```bash
+docker run -d --name gonokami-bot \
+  -e BOT_TOKEN="你的機器人Token" \
+  --sysctl net.ipv6.conf.all.disable_ipv6=1 \
+  --restart always gonokami-bot
+```
+
 ---
 
 _Zzz ～怕的是我～ Zzz ～_
