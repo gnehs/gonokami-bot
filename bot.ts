@@ -618,6 +618,7 @@ bot.on("poll_answer", async (ctx) => {
 
   const totalCount = Object.values(poll.votes)
     .flatMap((opts) => opts as number[])
+    .filter((optionId: number) => optionId !== poll.options.length - 1)
     .map((optionId: number) => (optionId % 2) + 1)
     .reduce((sum, quantity) => sum + quantity, 0);
 
