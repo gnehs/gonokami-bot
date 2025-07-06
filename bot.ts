@@ -42,6 +42,85 @@ const voteData = new JsonFileDb("votes.json");
 const subData = new JsonFileDb("subscriptions.json");
 const usageLog = new JsonFileDb("usage.json");
 const historyData = new JsonFileDb("chatHistories.json");
+const usageQuotaDb = new JsonFileDb("usageQuota.json");
+
+interface UsageStats {
+  users: Record<number, { date: string; count: number }>;
+  groups: Record<number, { date: string; count: number }>;
+}
+
+function getTodayDate(): string {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function checkAndIncrementQuota(ctx: Context): boolean {
+  const today = getTodayDate();
+  const now = Date.now();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+  let stats: UsageStats = (usageQuotaDb.get("stats") as UsageStats) ?? {
+    users: {},
+    groups: {},
+  };
+
+  // ---- Cleanup older than 7 days ----
+  for (const [uid, entry] of Object.entries(stats.users)) {
+    if (now - new Date(entry.date).getTime() > sevenDaysMs) {
+      delete stats.users[Number(uid)];
+    }
+  }
+  for (const [gid, entry] of Object.entries(stats.groups)) {
+    if (now - new Date(entry.date).getTime() > sevenDaysMs) {
+      delete stats.groups[Number(gid)];
+    }
+  }
+  // -----------------------------------
+
+  if (ctx.chat.type === "private") {
+    const id = ctx.from!.id;
+    let entry = stats.users[id] ?? { date: today, count: 0 };
+    if (entry.date !== today) entry = { date: today, count: 0 };
+
+    if (entry.count >= 30) {
+      usageQuotaDb.set("stats", stats); // persist cleanup even if over quota
+      return false;
+    }
+
+    entry.count += 1;
+    stats.users[id] = entry;
+  } else {
+    const id = ctx.chat.id;
+    let entry = stats.groups[id] ?? { date: today, count: 0 };
+    if (entry.date !== today) entry = { date: today, count: 0 };
+
+    if (entry.count >= 50) {
+      usageQuotaDb.set("stats", stats);
+      return false;
+    }
+
+    entry.count += 1;
+    stats.groups[id] = entry;
+  }
+
+  usageQuotaDb.set("stats", stats);
+  return true;
+}
+
+// -------- Quota limit messages & helper --------
+const LIMIT_MSGS = [
+  "😴 斯揪累累要睡覺了，明天再聊喔～",
+  "🛌 斯揪要去蓋被被曬太陽了，明天再跟你 LDS～",
+  "⏰ 斯揪先休息，kira kira 明天見！",
+  "🍯 蜂蜜吃完了，斯揪沒電啦，明天再說 886～",
+  "😴 斯揪累累要睡覺了，明天再嗨吧～",
+  "🛌 斯揪去王國午休，明天再來 KUSO～",
+  "🍯 蜂蜜耗盡，斯揪要充電，這裡今天先到此為止 886～",
+];
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+// ---------------------------------------------
 
 const OPENWEBUI_MODEL = openwebui(
   process.env.OPENWEBUI_MODEL || "gpt-4.1-mini"
@@ -1035,6 +1114,16 @@ function getAISTools(ctx: Context) {
 async function processLLMMessage(ctx: Context, userContent: string) {
   const botName = await getBotUsername(ctx);
   if (!shouldRespond(ctx, botName)) return;
+
+  // ----- Daily quota enforcement -----
+  if (!checkAndIncrementQuota(ctx)) {
+    const limitText = pickRandom(LIMIT_MSGS);
+    await safeReply(ctx, limitText, {
+      reply_to_message_id: ctx.message!.message_id,
+    });
+    return;
+  }
+  // -----------------------------------
 
   await ctx.api.sendChatAction(ctx.chat.id, "typing");
 
