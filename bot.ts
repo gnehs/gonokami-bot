@@ -789,49 +789,9 @@ async function summarizeMessages(msgs: { role: string; content: string }[]) {
   }
 }
 
-// AI SDK 工具定義將在訊息處理器中建立，方便取用 ctx
-
-bot.on("message:text", async (ctx) => {
-  // Ignore commands handled elsewhere
-  if (ctx.message.text.startsWith("/")) return;
-
-  const botName = await getBotUsername(ctx);
-  if (!shouldRespond(ctx, botName)) return;
-
-  await ctx.api.sendChatAction(ctx.chat.id, "typing");
-
-  const chatId = ctx.chat.id;
-  let history = chatHistories.get(chatId);
-  if (!history) {
-    history = { messages: [] };
-    chatHistories.set(chatId, history);
-  }
-
-  history.messages.push({ role: "user", content: ctx.message.text });
-
-  // Keep max 10 pairs (≈20 messages). If exceeded, summarize older part.
-  if (history.messages.length > 20) {
-    const toSummarize = history.messages.splice(
-      0,
-      history.messages.length - 20
-    );
-    const summary = await summarizeMessages(toSummarize);
-    history.messages.unshift({
-      role: "system",
-      content: `過去對話摘要：${summary}`,
-    });
-  }
-
-  const messagesForModel = [
-    ...history.messages,
-    {
-      role: "system",
-      content: `username：${ctx.message.from.last_name} ${ctx.message.from.first_name}`,
-    },
-  ];
-
-  // Define AI SDK tools (function calling)
-  const tools = {
+// Unified AI tools generator bound to a specific ctx
+function getAISTools(ctx: Context) {
+  return {
     get_current_number: {
       description: "取得目前號碼牌數字",
       parameters: z.object({}),
@@ -857,7 +817,7 @@ bot.on("message:text", async (ctx) => {
         await ctx.api.sendPoll(ctx.chat.id, title, pollOptions, {
           is_anonymous: false,
           allows_multiple_answers: true,
-          reply_to_message_id: ctx.message.message_id,
+          reply_to_message_id: ctx.message!.message_id,
         });
         return { done: true };
       },
@@ -900,13 +860,15 @@ bot.on("message:text", async (ctx) => {
           {
             allows_multiple_answers: true,
             is_anonymous: false,
-            reply_to_message_id: ctx.message.message_id,
+            reply_to_message_id: ctx.message!.message_id,
             reply_markup: {
               inline_keyboard: [
                 [
                   {
                     text: "👥 0 人 | 🚫 結束投票",
-                    callback_data: `stopramenvote_${hash(ctx.message.from.id)}`,
+                    callback_data: `stopramenvote_${hash(
+                      ctx.message!.from.id
+                    )}`,
                   },
                 ],
               ],
@@ -990,7 +952,7 @@ bot.on("message:text", async (ctx) => {
           first_name: ctx.from.first_name,
           target_number: numTarget,
           created_at: Date.now(),
-          message_id: ctx.message.message_id,
+          message_id: ctx.message!.message_id,
         });
         subData.set("subscriptions", subscriptions);
 
@@ -1051,15 +1013,53 @@ bot.on("message:text", async (ctx) => {
         reply_to_message_id?: number;
       }) => {
         await ctx.api.sendMessage(ctx.chat.id, text, {
-          reply_to_message_id:
-            reply_to_message_id !== undefined
-              ? reply_to_message_id
-              : ctx.message.message_id,
+          reply_to_message_id: reply_to_message_id ?? ctx.message!.message_id,
         });
         return { done: true };
       },
     },
   } as const;
+}
+
+// Core handler shared by both text and sticker messages
+async function processLLMMessage(ctx: Context, userContent: string) {
+  const botName = await getBotUsername(ctx);
+  if (!shouldRespond(ctx, botName)) return;
+
+  await ctx.api.sendChatAction(ctx.chat.id, "typing");
+
+  const chatId = ctx.chat.id;
+  let history = chatHistories.get(chatId);
+  if (!history) {
+    history = { messages: [] };
+    chatHistories.set(chatId, history);
+  }
+
+  history.messages.push({ role: "user", content: userContent });
+
+  if (history.messages.length > 20) {
+    const toSummarize = history.messages.splice(
+      0,
+      history.messages.length - 20
+    );
+    const summary = await summarizeMessages(toSummarize);
+    history.messages.unshift({
+      role: "system",
+      content: `過去對話摘要：${summary}`,
+    });
+  }
+
+  const messagesForModel = [
+    ...history.messages,
+    {
+      role: "system",
+      content: `username：${ctx.message!.from.last_name} ${
+        ctx.message!.from.first_name
+      }`,
+    },
+  ];
+
+  const tools = getAISTools(ctx);
 
   try {
     let text: string | undefined;
@@ -1070,32 +1070,38 @@ bot.on("message:text", async (ctx) => {
         tools,
         maxSteps: 3,
       }));
-    } catch (err) {
+    } catch {
       text = "挖哩咧，偶詞窮惹";
     }
 
     const assistantResponse = text?.trim() ?? "";
-    if (assistantResponse !== "") {
+    if (assistantResponse) {
       history.messages.push({ role: "assistant", content: assistantResponse });
-
-      // persist history after assistant response
       persistChatHistories();
-
       await safeReply(ctx, assistantResponse, {
-        reply_to_message_id: ctx.message.message_id,
+        reply_to_message_id: ctx.message!.message_id,
       });
     }
   } catch (e) {
     console.error("chat generate error", e);
     const fallback = "挖哩咧，偶詞窮惹。";
     history.messages.push({ role: "assistant", content: fallback });
-
-    // persist history after fallback
     persistChatHistories();
     await safeReply(ctx, fallback, {
-      reply_to_message_id: ctx.message.message_id,
+      reply_to_message_id: ctx.message!.message_id,
     });
   }
+}
+
+bot.on("message:text", async (ctx) => {
+  if (ctx.message.text.startsWith("/")) return;
+  await processLLMMessage(ctx, ctx.message.text);
+});
+
+// Handle sticker messages via LLM (uses emoji as content)
+bot.on("message:sticker", async (ctx) => {
+  const emoji = ctx.message.sticker?.emoji || "🤔";
+  await processLLMMessage(ctx, `[貼圖 ${emoji}]`);
 });
 
 // ----------------- End ChatGPT Handler -----------------
