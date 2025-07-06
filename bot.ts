@@ -1168,6 +1168,12 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     }
   }
 
+  // 在群組聊天室中，在訊息前加入發話者名稱，讓 LLM 能識別說話者
+  if (ctx.chat.type !== "private") {
+    const senderName = ctx.from?.first_name || "User";
+    finalUserContent = `${senderName}：${finalUserContent}`;
+  }
+
   history.messages.push({ role: "user", content: finalUserContent });
 
   if (history.messages.length > 20) {
