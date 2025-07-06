@@ -999,25 +999,6 @@ function getAISTools(ctx: Context) {
         return { done: true } as const;
       },
     },
-    send_message: {
-      description: "在聊天中傳送文字訊息",
-      parameters: z.object({
-        text: z.string(),
-        reply_to_message_id: z.number().optional(),
-      }),
-      execute: async ({
-        text,
-        reply_to_message_id,
-      }: {
-        text: string;
-        reply_to_message_id?: number;
-      }) => {
-        await ctx.api.sendMessage(ctx.chat.id, text, {
-          reply_to_message_id: reply_to_message_id ?? ctx.message!.message_id,
-        });
-        return { done: true };
-      },
-    },
     get_reply_message: {
       description: "取得目前訊息所回覆之訊息的內容與相關資訊",
       parameters: z.object({}),
