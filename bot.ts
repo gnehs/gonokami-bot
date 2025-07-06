@@ -999,6 +999,54 @@ function getAISTools(ctx: Context) {
         return { done: true } as const;
       },
     },
+    send_message: {
+      description: "在聊天中傳送文字訊息",
+      parameters: z.object({
+        text: z.string(),
+        reply_to_message_id: z.number().optional(),
+      }),
+      execute: async ({
+        text,
+        reply_to_message_id,
+      }: {
+        text: string;
+        reply_to_message_id?: number;
+      }) => {
+        await ctx.api.sendMessage(ctx.chat.id, text, {
+          reply_to_message_id: reply_to_message_id ?? ctx.message!.message_id,
+        });
+        return { done: true };
+      },
+    },
+    get_reply_message: {
+      description: "取得目前訊息所回覆之訊息的內容與相關資訊",
+      parameters: z.object({}),
+      execute: async () => {
+        const replyMsg = (ctx.message as any).reply_to_message;
+        if (!replyMsg) {
+          return { exists: false } as const;
+        }
+
+        let content: string | undefined;
+        if (replyMsg.text) content = replyMsg.text;
+        else if (replyMsg.sticker)
+          content = `[貼圖 ${replyMsg.sticker.emoji || ""}]`;
+        else if (replyMsg.caption) content = replyMsg.caption;
+
+        return {
+          exists: true,
+          from: replyMsg.from?.first_name ?? "",
+          content_type: replyMsg.text
+            ? "text"
+            : replyMsg.sticker
+            ? "sticker"
+            : replyMsg.caption
+            ? "caption"
+            : "other",
+          content: content ?? "",
+        } as const;
+      },
+    },
   } as const;
 }
 
@@ -1016,7 +1064,21 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     chatHistories.set(chatId, history);
   }
 
-  history.messages.push({ role: "user", content: userContent });
+  let finalUserContent = userContent;
+  const replyMsg: any = (ctx.message as any).reply_to_message;
+  if (replyMsg) {
+    let repliedContent: string | undefined;
+    if (replyMsg.text) repliedContent = replyMsg.text;
+    else if (replyMsg.caption) repliedContent = replyMsg.caption;
+    else if (replyMsg.sticker)
+      repliedContent = `[貼圖 ${replyMsg.sticker.emoji || ""}]`;
+
+    if (repliedContent) {
+      finalUserContent = `${userContent}\n\n(回覆「${repliedContent}」)`;
+    }
+  }
+
+  history.messages.push({ role: "user", content: finalUserContent });
 
   if (history.messages.length > 20) {
     const toSummarize = history.messages.splice(
