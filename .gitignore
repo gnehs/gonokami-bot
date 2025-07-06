@@ -140,3 +140,4 @@ subscriptions.json
 .DS_Store
 data/usage.json
 data/chatHistories.json
+data/usageQuota.json

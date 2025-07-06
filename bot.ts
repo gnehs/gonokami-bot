@@ -47,6 +47,7 @@ const usageQuotaDb = new JsonFileDb("usageQuota.json");
 interface UsageStats {
   users: Record<number, { date: string; count: number }>;
   groups: Record<number, { date: string; count: number }>;
+  global?: { date: string; count: number };
 }
 
 function getTodayDate(): string {
@@ -62,6 +63,22 @@ function checkAndIncrementQuota(ctx: Context): boolean {
     users: {},
     groups: {},
   };
+
+  // Ensure global counter exists
+  if (!stats.global) {
+    stats.global = { date: today, count: 0 };
+  }
+
+  // Reset global counter if date changed
+  if (stats.global.date !== today) {
+    stats.global = { date: today, count: 0 };
+  }
+
+  // Check global quota (1000 messages per day)
+  if (stats.global.count >= 1000) {
+    usageQuotaDb.set("stats", stats); // persist any cleanup
+    return false;
+  }
 
   // ---- Cleanup older than 7 days ----
   for (const [uid, entry] of Object.entries(stats.users)) {
@@ -101,6 +118,9 @@ function checkAndIncrementQuota(ctx: Context): boolean {
     entry.count += 1;
     stats.groups[id] = entry;
   }
+
+  // Increment global counter after individual checks pass
+  stats.global.count += 1;
 
   usageQuotaDb.set("stats", stats);
   return true;
