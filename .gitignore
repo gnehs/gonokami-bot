@@ -139,3 +139,4 @@ votes.json
 subscriptions.json
 .DS_Store
 data/usage.json
+data/chatHistories.json

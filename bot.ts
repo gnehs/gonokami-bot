@@ -5,6 +5,9 @@ import crypto from "crypto";
 import os from "os";
 import JsonFileDb from "./utils/db.js";
 import fs from "fs";
+import { generateText } from "ai";
+import { z } from "zod";
+import { openwebui } from "./providers/openwebui.js";
 
 // ----------------- Environment Validation -----------------
 if (!process.env.BOT_TOKEN) {
@@ -22,6 +25,12 @@ async function getBotUsername(ctx: Context) {
 }
 
 const bot = new Bot(process.env.BOT_TOKEN!);
+
+// Global error handler – prevent crashes
+bot.catch((err) => {
+  console.error("[Bot Error]", err);
+});
+
 const salt = os.hostname() || "salt";
 
 const dataDir = "./data";
@@ -32,6 +41,37 @@ if (!fs.existsSync(dataDir)) {
 const voteData = new JsonFileDb("votes.json");
 const subData = new JsonFileDb("subscriptions.json");
 const usageLog = new JsonFileDb("usage.json");
+const historyData = new JsonFileDb("chatHistories.json");
+
+const OPENWEBUI_MODEL = openwebui(
+  process.env.OPENWEBUI_MODEL || "gpt-4.1-mini"
+);
+
+// ----------------- Chat Memory -----------------
+// Keep recent 10 user/assistant message pairs per chat. Older history will be summarized automatically.
+const chatHistories = new Map<number, { messages: any[] }>();
+
+// Load existing histories from disk
+const storedHistories = historyData.get("histories") as
+  | Record<string, { messages: any[] }>
+  | undefined;
+if (storedHistories) {
+  for (const [id, data] of Object.entries(storedHistories)) {
+    chatHistories.set(Number(id), data);
+  }
+}
+
+function persistChatHistories() {
+  const obj = Object.fromEntries(
+    Array.from(chatHistories.entries()).map(([id, data]) => [
+      id.toString(),
+      data,
+    ])
+  );
+  historyData.set("histories", obj as any);
+}
+
+// ----------------- Helper Utilities (restored) -----------------
 
 function logActivity(activity: string, data: Record<string, unknown>): void {
   const logEntry = {
@@ -45,18 +85,18 @@ function logActivity(activity: string, data: Record<string, unknown>): void {
   console.log(logEntry);
 }
 
-function hash(str) {
+function hash(str: string | number): string {
   const hash = crypto.createHash("sha256");
   hash.update(str.toString() + salt, "utf8");
   return hash.digest("hex").slice(0, 8);
 }
 
-let numberCache = {
+let numberCache: { value: number | null; timestamp: number } = {
   value: null,
   timestamp: 0,
 };
 
-async function getCurrentNumber() {
+async function getCurrentNumber(): Promise<number | null> {
   const now = Date.now();
   if (now - numberCache.timestamp < 60 * 1000 && numberCache.value !== null) {
     return numberCache.value;
@@ -66,7 +106,7 @@ async function getCurrentNumber() {
       "https://dxc.tagfans.com/mighty?_field%5B%5D=*&%24gid=10265&%24description=anouncingNumbers"
     )
       .then((x) => x.json())
-      .then((x) => x.sort((a, b) => b.UpdDate - a.UpdDate));
+      .then((x) => x.sort((a: any, b: any) => b.UpdDate - a.UpdDate));
 
     if (!res || res.length === 0) {
       return null;
@@ -85,6 +125,7 @@ async function getCurrentNumber() {
 }
 
 // ----------------- Type Definitions -----------------
+
 interface Subscription {
   chat_id: number;
   user_id: number;
@@ -92,6 +133,16 @@ interface Subscription {
   target_number: number;
   created_at: number;
   message_id: number;
+}
+
+function shouldRespond(ctx: Context, botName: string): boolean {
+  if (ctx.chat.type === "private") return true;
+  const text = ctx.message?.text || "";
+  const mentionRegex = new RegExp(`@${botName}\\b`, "i");
+  const repliedToBot =
+    ctx.message?.reply_to_message?.from?.username === botName ||
+    ctx.message?.reply_to_message?.from?.id === (ctx as any).me?.id;
+  return repliedToBot || mentionRegex.test(text);
 }
 
 // A helper that safely replies and falls back if the original message cannot be replied to.
@@ -709,6 +760,345 @@ function updatePollData(id, data) {
   polls[id] = poll;
   voteData.set("polls", polls);
 }
+
+// ----------------- ChatGPT Handler -----------------
+
+async function summarizeMessages(msgs: { role: string; content: string }[]) {
+  const summaryPrompt: { role: "system" | "user"; content: string }[] = [
+    {
+      role: "system",
+      content:
+        "請用 100 字內的繁體中文摘要以下對話，摘要將用於後續對話上下文，不要遺漏重要資訊。",
+    },
+    {
+      role: "user",
+      content: JSON.stringify(msgs.map((m) => ({ r: m.role, c: m.content }))),
+    },
+  ];
+
+  try {
+    const { text } = await generateText({
+      model: OPENWEBUI_MODEL,
+      messages: summaryPrompt,
+      maxTokens: 120,
+      temperature: 0.3,
+    });
+    return text.trim();
+  } catch (err: any) {
+    return "(摘要失敗)";
+  }
+}
+
+// AI SDK 工具定義將在訊息處理器中建立，方便取用 ctx
+
+bot.on("message:text", async (ctx) => {
+  // Ignore commands handled elsewhere
+  if (ctx.message.text.startsWith("/")) return;
+
+  const botName = await getBotUsername(ctx);
+  if (!shouldRespond(ctx, botName)) return;
+
+  await ctx.api.sendChatAction(ctx.chat.id, "typing");
+
+  const chatId = ctx.chat.id;
+  let history = chatHistories.get(chatId);
+  if (!history) {
+    history = { messages: [] };
+    chatHistories.set(chatId, history);
+  }
+
+  history.messages.push({ role: "user", content: ctx.message.text });
+
+  // Keep max 10 pairs (≈20 messages). If exceeded, summarize older part.
+  if (history.messages.length > 20) {
+    const toSummarize = history.messages.splice(
+      0,
+      history.messages.length - 20
+    );
+    const summary = await summarizeMessages(toSummarize);
+    history.messages.unshift({
+      role: "system",
+      content: `過去對話摘要：${summary}`,
+    });
+  }
+
+  const messagesForModel = [
+    ...history.messages,
+    {
+      role: "system",
+      content: `username：${ctx.message.from.last_name} ${ctx.message.from.first_name}`,
+    },
+  ];
+
+  // Define AI SDK tools (function calling)
+  const tools = {
+    get_current_number: {
+      description: "取得目前號碼牌數字",
+      parameters: z.object({}),
+      execute: async () => {
+        const num = await getCurrentNumber();
+        return { current_number: num };
+      },
+    },
+    create_vote: {
+      description: "在聊天中建立投票，限文字選項",
+      parameters: z.object({
+        title: z.string(),
+        options: z.array(z.string()).min(2).max(10),
+      }),
+      execute: async ({
+        title,
+        options,
+      }: {
+        title: string;
+        options: string[];
+      }) => {
+        const pollOptions = options.map((t) => ({ text: t }));
+        await ctx.api.sendPoll(ctx.chat.id, title, pollOptions, {
+          is_anonymous: false,
+          allows_multiple_answers: true,
+          reply_to_message_id: ctx.message.message_id,
+        });
+        return { done: true };
+      },
+    },
+    create_ramen_vote: {
+      description: "建立拉麵點餐投票，提供固定選項且可自訂標題與離開選項文字",
+      parameters: z.object({
+        title: z.string().optional(),
+        bye_option: z.string().optional(),
+      }),
+      execute: async ({
+        title,
+        bye_option,
+      }: {
+        title?: string;
+        bye_option?: string;
+      }) => {
+        const voteTitle =
+          title && title.trim().length ? title : "限定拉麵，點餐！🍜";
+        const byeOptionsArr = ["偶不吃了 😠", "怕的是他 👑", "蓋被被 😴"];
+        const byeOpt =
+          bye_option && bye_option.trim().length
+            ? bye_option
+            : byeOptionsArr[Math.floor(Math.random() * byeOptionsArr.length)];
+
+        const voteOptions = [
+          "+1 | 🍜 單點",
+          "+2 | 🍜 單點",
+          "+1 | 🥚 加蛋",
+          "+2 | 🥚 加蛋",
+          "+1 | ✨ 超值",
+          "+2 | ✨ 超值",
+          byeOpt,
+        ];
+        const pollOptionsRamen = voteOptions.map((t) => ({ text: t }));
+        const data = await ctx.api.sendPoll(
+          ctx.chat.id,
+          voteTitle,
+          pollOptionsRamen,
+          {
+            allows_multiple_answers: true,
+            is_anonymous: false,
+            reply_to_message_id: ctx.message.message_id,
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: "👥 0 人 | 🚫 結束投票",
+                    callback_data: `stopramenvote_${hash(ctx.message.from.id)}`,
+                  },
+                ],
+              ],
+            },
+          }
+        );
+
+        updatePollData(data.poll.id, {
+          ...data.poll,
+          chat_id: ctx.chat.id,
+          message_id: data.message_id,
+          user_id: ctx.from.id,
+          chat_name: ctx.chat.title || ctx.chat.first_name,
+          chat_type: ctx.chat.type,
+          votes: {},
+        });
+
+        return { done: true };
+      },
+    },
+    subscribe_number: {
+      description: "訂閱叫號牌，僅限私訊使用。",
+      parameters: z.object({
+        target_number: z.number().int().describe("要訂閱的號碼 (1001-1200)"),
+      }),
+      execute: async ({ target_number }: { target_number: number }) => {
+        if (ctx.chat.type !== "private") {
+          await safeReply(
+            ctx,
+            "🗣️ 告老師喔！在群組不能直接訂閱，請私訊偶醬子才行。"
+          );
+          return { done: false } as const;
+        }
+
+        const currentNumber = await getCurrentNumber();
+        if (currentNumber === null) {
+          await safeReply(ctx, "挖哩咧 😵‍💫，偶拿不到號碼，很遜欸。");
+          return { done: false } as const;
+        }
+
+        const numTarget = target_number;
+        if (
+          Number.isNaN(numTarget) ||
+          !Number.isInteger(numTarget) ||
+          numTarget < 1001 ||
+          numTarget > 1200
+        ) {
+          await safeReply(
+            ctx,
+            "🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。"
+          );
+          return { done: false } as const;
+        }
+
+        if (numTarget <= currentNumber) {
+          await safeReply(
+            ctx,
+            `🤡 這位同學，*${numTarget}* 已經過了，你很奇欸。`,
+            { parse_mode: "Markdown" }
+          );
+          return { done: false } as const;
+        }
+
+        const subscriptions: Subscription[] =
+          (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
+        const existingSub = subscriptions.find(
+          (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
+        );
+        if (existingSub) {
+          await safeReply(
+            ctx,
+            `⚠️ 你已經訂閱 *${existingSub.target_number}* 號了，不要重複訂，很遜。`,
+            { parse_mode: "Markdown" }
+          );
+          return { done: false } as const;
+        }
+
+        subscriptions.push({
+          chat_id: ctx.chat.id,
+          user_id: ctx.from.id,
+          first_name: ctx.from.first_name,
+          target_number: numTarget,
+          created_at: Date.now(),
+          message_id: ctx.message.message_id,
+        });
+        subData.set("subscriptions", subscriptions);
+
+        await safeReply(
+          ctx,
+          `👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。想取消再跟偶說醬子。`,
+          { parse_mode: "Markdown" }
+        );
+        return { done: true } as const;
+      },
+    },
+    unsubscribe_number: {
+      description: "取消目前使用者訂閱的號碼牌，僅限私訊使用。",
+      parameters: z.object({}),
+      execute: async () => {
+        if (ctx.chat.type !== "private") {
+          await safeReply(
+            ctx,
+            "🗣️ 告老師喔！在群組不能直接取消訂閱，請私訊偶醬子才行。"
+          );
+          return { done: false } as const;
+        }
+
+        const subscriptions: Subscription[] =
+          (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
+        const subIndex = subscriptions.findIndex(
+          (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
+        );
+
+        if (subIndex === -1) {
+          await safeReply(ctx, "🗣️ 你又沒訂閱，是在取消什麼，告老師喔！");
+          return { done: false } as const;
+        }
+
+        const sub = subscriptions[subIndex];
+        subscriptions.splice(subIndex, 1);
+        subData.set("subscriptions", subscriptions);
+
+        await safeReply(
+          ctx,
+          `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
+          { parse_mode: "Markdown" }
+        );
+        return { done: true } as const;
+      },
+    },
+    send_message: {
+      description: "在聊天中傳送文字訊息",
+      parameters: z.object({
+        text: z.string(),
+        reply_to_message_id: z.number().optional(),
+      }),
+      execute: async ({
+        text,
+        reply_to_message_id,
+      }: {
+        text: string;
+        reply_to_message_id?: number;
+      }) => {
+        await ctx.api.sendMessage(ctx.chat.id, text, {
+          reply_to_message_id:
+            reply_to_message_id !== undefined
+              ? reply_to_message_id
+              : ctx.message.message_id,
+        });
+        return { done: true };
+      },
+    },
+  } as const;
+
+  try {
+    let text: string | undefined;
+    try {
+      ({ text } = await generateText({
+        model: OPENWEBUI_MODEL,
+        messages: messagesForModel,
+        tools,
+        maxSteps: 3,
+      }));
+    } catch (err) {
+      text = "挖哩咧，偶詞窮惹";
+    }
+
+    const assistantResponse = text?.trim() ?? "";
+    if (assistantResponse !== "") {
+      history.messages.push({ role: "assistant", content: assistantResponse });
+
+      // persist history after assistant response
+      persistChatHistories();
+
+      await safeReply(ctx, assistantResponse, {
+        reply_to_message_id: ctx.message.message_id,
+      });
+    }
+  } catch (e) {
+    console.error("chat generate error", e);
+    const fallback = "挖哩咧，偶詞窮惹。";
+    history.messages.push({ role: "assistant", content: fallback });
+
+    // persist history after fallback
+    persistChatHistories();
+    await safeReply(ctx, fallback, {
+      reply_to_message_id: ctx.message.message_id,
+    });
+  }
+});
+
+// ----------------- End ChatGPT Handler -----------------
 
 bot.start();
 // Enable graceful stop
