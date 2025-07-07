@@ -157,6 +157,7 @@ const LIMIT_MSGS = [
 const OPENWEBUI_MODEL = openwebui(
   process.env.OPENWEBUI_MODEL || "gpt-4.1-mini"
 );
+const TAROT_MODEL = openwebui(process.env.TAROT_MODEL || "Tarot");
 
 // ----------------- Chat Memory -----------------
 // Keep recent 10 user/assistant message pairs per chat. Older history will be summarized automatically.
@@ -400,8 +401,6 @@ bot.command("number", async (ctx) => {
   }
   // Group Chat Logic
   else {
-    const subscriptions: Subscription[] =
-      (getAllSubscriptions() as Subscription[] | undefined) ?? [];
     const existingSub = findSubscription(ctx.chat.id, ctx.from.id);
     const username = await getBotUsername(ctx);
 
@@ -564,6 +563,59 @@ async function summarizeMessages(msgs: { role: string; content: string }[]) {
 // Unified AI tools generator bound to a specific ctx
 function getAISTools(ctx: Context) {
   return {
+    tarot: {
+      description: "提供塔羅牌占卜，請使用者提供問題，並提供三張牌的結果",
+      parameters: z.object({
+        question: z.string(),
+      }),
+      execute: async ({ question }: { question: string }) => {
+        // 3 unique tarot card numbers between 1 and 78
+        const picks = new Set<number>();
+        while (picks.size < 3) {
+          picks.add(Math.floor(Math.random() * 78) + 1);
+        }
+        const numbers = Array.from(picks);
+        const numbersStr = numbers.join(", ");
+        await safeReply(ctx, `🔮 *塔羅斯揪*\n正在召喚塔羅斯揪`, {
+          parse_mode: "Markdown",
+          reply_to_message_id: ctx.message!.message_id,
+        });
+        await ctx.api.sendChatAction(ctx.chat.id, "typing");
+        const { text } = await generateText({
+          model: TAROT_MODEL,
+          messages: [
+            {
+              role: "system",
+              content:
+                "你是一個塔羅牌占卜師，請使用者提供問題，並提供三張牌的結果，僅支援純文字，不要使用 markdown 格式",
+            },
+            {
+              role: "assistant",
+              content: `已抽選塔羅牌：${numbersStr}`,
+            },
+            {
+              role: "user",
+              content: question,
+            },
+          ],
+        });
+        // remove <think> and </think>
+        const result =
+          "🔮 *塔羅斯揪*\n" +
+          text
+            ?.trim()
+            .replace(/<think>[\s\S]*?<\/think>/g, "")
+            .replace(/### (.*)/g, "*$1*")
+            .replace(/!\[.*\]\(.*\)/g, "")
+            .replace(/\n\n\n/g, "\n\n");
+
+        await safeReply(ctx, result, {
+          parse_mode: "Markdown",
+          reply_to_message_id: ctx.message!.message_id,
+        });
+        return `已傳送結果給使用者：${result}`;
+      },
+    },
     get_current_number: {
       description: "取得目前號碼牌數字",
       parameters: z.object({}),
@@ -573,7 +625,7 @@ function getAISTools(ctx: Context) {
       },
     },
     create_vote: {
-      description: "在聊天中建立投票，限文字選項",
+      description: "在聊天中建立普通投票，限文字選項",
       parameters: z.object({
         title: z.string(),
         options: z.array(z.string()).min(2).max(10),
@@ -591,11 +643,12 @@ function getAISTools(ctx: Context) {
           allows_multiple_answers: true,
           reply_to_message_id: ctx.message!.message_id,
         });
-        return { done: true };
+        return `已傳送投票給使用者`;
       },
     },
     create_ramen_vote: {
-      description: "建立拉麵點餐投票，提供固定選項且可自訂標題與離開選項文字",
+      description:
+        "建立拉麵點餐投票，提供人數統計功能的投票，可自訂標題與離開選項文字",
       parameters: z.object({
         title: z.string().optional(),
         bye_option: z.string().optional(),
@@ -658,7 +711,7 @@ function getAISTools(ctx: Context) {
           votes: {},
         });
 
-        return { done: true };
+        return `已傳送投票給使用者`;
       },
     },
     subscribe_number: {
@@ -729,7 +782,8 @@ function getAISTools(ctx: Context) {
           `👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。想取消再跟偶說醬子。`,
           { parse_mode: "Markdown" }
         );
-        return { done: true } as const;
+
+        return `已傳送訂閱訊息給使用者`;
       },
     },
     unsubscribe_number: {
@@ -763,36 +817,7 @@ function getAISTools(ctx: Context) {
           `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
           { parse_mode: "Markdown" }
         );
-        return { done: true } as const;
-      },
-    },
-    get_reply_message: {
-      description: "取得目前訊息所回覆之訊息的內容與相關資訊",
-      parameters: z.object({}),
-      execute: async () => {
-        const replyMsg = (ctx.message as any).reply_to_message;
-        if (!replyMsg) {
-          return { exists: false } as const;
-        }
-
-        let content: string | undefined;
-        if (replyMsg.text) content = replyMsg.text;
-        else if (replyMsg.sticker)
-          content = `[貼圖 ${replyMsg.sticker.emoji || ""}]`;
-        else if (replyMsg.caption) content = replyMsg.caption;
-
-        return {
-          exists: true,
-          from: replyMsg.from?.first_name ?? "",
-          content_type: replyMsg.text
-            ? "text"
-            : replyMsg.sticker
-            ? "sticker"
-            : replyMsg.caption
-            ? "caption"
-            : "other",
-          content: content ?? "",
-        } as const;
+        return `已傳送取消訂閱訊息給使用者`;
       },
     },
   } as const;
