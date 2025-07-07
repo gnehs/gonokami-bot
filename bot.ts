@@ -867,7 +867,7 @@ async function summarizeMessages(msgs: { role: string; content: string }[]) {
     {
       role: "system",
       content:
-        "請用 100 字內的繁體中文摘要以下對話，摘要將用於後續對話上下文，不要遺漏重要資訊。",
+        "使用條列式摘要以下對話，100 字左右，摘要將用於後續對話上下文，不要遺漏重要資訊。",
     },
     {
       role: "user",
@@ -879,7 +879,6 @@ async function summarizeMessages(msgs: { role: string; content: string }[]) {
     const { text } = await generateText({
       model: OPENWEBUI_MODEL,
       messages: summaryPrompt,
-      maxTokens: 120,
       temperature: 0.3,
     });
     return text.trim();
