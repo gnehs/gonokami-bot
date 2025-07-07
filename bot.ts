@@ -1164,7 +1164,8 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       repliedContent = `[貼圖 ${replyMsg.sticker.emoji || ""}]`;
 
     if (repliedContent) {
-      finalUserContent = `${userContent}\n\n(回覆「${repliedContent}」)`;
+      repliedContent = `${replyMsg.from?.first_name || ""}：${repliedContent}`;
+      finalUserContent = `> ${repliedContent}\n\n${userContent}`;
     }
   }
 
