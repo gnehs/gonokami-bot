@@ -1,8 +1,11 @@
 import "dotenv/config";
-import { Bot, Context, GrammyError } from "grammy";
-
-import crypto from "crypto";
-import os from "os";
+import { Bot, Context } from "grammy";
+import {
+  safeReply,
+  safeSendMessage,
+  hash,
+  pickRandom,
+} from "./utils/telegram.js";
 import JsonFileDb from "./utils/db.js";
 import fs from "fs";
 import { generateText } from "ai";
@@ -31,7 +34,7 @@ bot.catch((err) => {
   console.error("[Bot Error]", err);
 });
 
-const salt = os.hostname() || "salt";
+// salt moved to utils/telegram.js
 
 const dataDir = "./data";
 if (!fs.existsSync(dataDir)) {
@@ -137,9 +140,7 @@ const LIMIT_MSGS = [
   "🍯 蜂蜜耗盡，斯揪要充電，這裡今天先到此為止 886～",
 ];
 
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+// pickRandom moved to utils/telegram.js
 // ---------------------------------------------
 
 const OPENWEBUI_MODEL = openwebui(
@@ -184,11 +185,7 @@ function logActivity(activity: string, data: Record<string, unknown>): void {
   console.log(logEntry);
 }
 
-function hash(str: string | number): string {
-  const hash = crypto.createHash("sha256");
-  hash.update(str.toString() + salt, "utf8");
-  return hash.digest("hex").slice(0, 8);
-}
+// hash moved to utils/telegram.js
 
 let numberCache: { value: number | null; timestamp: number } = {
   value: null,
@@ -244,49 +241,7 @@ function shouldRespond(ctx: Context, botName: string): boolean {
   return repliedToBot || mentionRegex.test(text);
 }
 
-// A helper that safely replies and falls back if the original message cannot be replied to.
-async function safeReply(
-  ctx: Context,
-  text: string,
-  options: Parameters<Context["reply"]>[1] = {}
-) {
-  try {
-    return await ctx.reply(text, options as any);
-  } catch (err) {
-    if (
-      err instanceof GrammyError &&
-      err.description.includes("message to be replied not found")
-    ) {
-      const opts = { ...(options || {}) } as Record<string, unknown>;
-      delete opts.reply_to_message_id;
-      return await ctx.api.sendMessage(ctx.chat.id, text, opts as any);
-    }
-    throw err;
-  }
-}
-
-function safeSendMessage(
-  botInstance: Bot,
-  chatId: number,
-  text: string,
-  options:
-    | Parameters<Context["api"]["sendMessage"]>[2]
-    | Record<string, unknown> = {}
-) {
-  return botInstance.api
-    .sendMessage(chatId, text, options as any)
-    .catch((err) => {
-      if (
-        err instanceof GrammyError &&
-        err.description.includes("message to be replied not found")
-      ) {
-        const opts = { ...(options || {}) } as Record<string, unknown>;
-        delete opts.reply_to_message_id;
-        return botInstance.api.sendMessage(chatId, text, opts as any);
-      }
-      throw err;
-    });
-}
+// safeReply & safeSendMessage moved to utils/telegram.js
 
 bot.command("start", async (ctx) => {
   const payloadStr = ctx.message?.text?.split(" ").slice(1).join(" ") || "";
