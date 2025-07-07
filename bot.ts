@@ -7,6 +7,7 @@ import {
   pickRandom,
 } from "./utils/telegram.js";
 import JsonFileDb from "./utils/db.js";
+import { voteData, updatePollData, parsePollResult } from "./utils/poll.js";
 import fs from "fs";
 import { generateText } from "ai";
 import { getCurrentNumber } from "./utils/number.js";
@@ -51,8 +52,7 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const voteData = new JsonFileDb("votes.json");
-// subData handled in utils/subscription.js
+// voteData handled in utils/poll.js
 const usageLog = new JsonFileDb("usage.json");
 const historyData = new JsonFileDb("chatHistories.json");
 const usageQuotaDb = new JsonFileDb("usageQuota.json");
@@ -736,43 +736,7 @@ bot.callbackQuery(/stopramenvote_(.+)/, async (ctx) => {
   }
 });
 
-function parsePollResult(poll) {
-  const optionsArr: string[] = Array.from(
-    new Set(poll.options.slice(0, -1).map((x) => x.text.split("|")[1].trim()))
-  );
-  const result: Record<string, number> = {};
-  optionsArr.forEach((opt) => {
-    result[opt] = 0;
-  });
-  poll.options
-    .slice(0, -1)
-    .forEach((x: { text: string; voter_count: number }) => {
-      let option = x.text.split("|")[1].trim();
-      const multiplier = Number(x.text.replace("+", "").split("|")[0].trim());
-      result[option] += x.voter_count * multiplier;
-    });
-  const count = Object.values(result).reduce((acc, cur) => acc + cur, 0);
-  return {
-    count,
-    result,
-  };
-}
-function updatePollData(id, data) {
-  let polls = voteData.get("polls") || {};
-  let poll = polls[id] || {};
-  poll = {
-    ...poll,
-    ...data,
-    update_time: Date.now(),
-  };
-  delete poll.id;
-  delete poll.is_anonymous;
-  delete poll.type;
-  delete poll.allows_multiple_answers;
-
-  polls[id] = poll;
-  voteData.set("polls", polls);
-}
+// parsePollResult & updatePollData now live in utils/poll.js
 
 // ----------------- ChatGPT Handler -----------------
 
