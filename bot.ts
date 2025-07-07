@@ -10,6 +10,15 @@ import JsonFileDb from "./utils/db.js";
 import fs from "fs";
 import { generateText } from "ai";
 import { getCurrentNumber } from "./utils/number.js";
+import {
+  Subscription,
+  addSubscription,
+  removeSubscription,
+  findSubscription,
+  validateTargetNumber,
+  getAll as getAllSubscriptions,
+  saveAll as saveSubscriptions,
+} from "./utils/subscription.js";
 import { z } from "zod";
 import { openwebui } from "./providers/openwebui.js";
 
@@ -43,7 +52,7 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const voteData = new JsonFileDb("votes.json");
-const subData = new JsonFileDb("subscriptions.json");
+// subData handled in utils/subscription.js
 const usageLog = new JsonFileDb("usage.json");
 const historyData = new JsonFileDb("chatHistories.json");
 const usageQuotaDb = new JsonFileDb("usageQuota.json");
@@ -190,14 +199,7 @@ function logActivity(activity: string, data: Record<string, unknown>): void {
 
 // ----------------- Type Definitions -----------------
 
-interface Subscription {
-  chat_id: number;
-  user_id: number;
-  first_name: string;
-  target_number: number;
-  created_at: number;
-  message_id: number;
-}
+// Subscription interface moved to utils/subscription.js
 
 function shouldRespond(ctx: Context, botName: string): boolean {
   if (ctx.chat.type === "private") return true;
@@ -256,10 +258,8 @@ bot.command("start", async (ctx) => {
       }
 
       const subscriptions: Subscription[] =
-        (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
-      const existingSub = subscriptions.find(
-        (s) => s.chat_id === chatId && s.user_id === userId
-      );
+        (getAllSubscriptions() as Subscription[] | undefined) ?? [];
+      const existingSub = findSubscription(chatId, userId);
 
       if (existingSub) {
         return ctx.reply(
@@ -267,15 +267,13 @@ bot.command("start", async (ctx) => {
         );
       }
 
-      subscriptions.push({
-        chat_id: chatId,
-        user_id: userId,
-        first_name: ctx.from.first_name,
-        target_number: targetNumber,
-        created_at: Date.now(),
-        message_id: Number(user_message_id),
-      });
-      subData.set("subscriptions", subscriptions);
+      addSubscription(
+        chatId,
+        userId,
+        ctx.from.first_name,
+        targetNumber,
+        Number(user_message_id)
+      );
 
       await ctx.reply(
         `👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
@@ -291,7 +289,7 @@ bot.command("start", async (ctx) => {
       const chatId = Number(group_chat_id);
 
       const subscriptions: Subscription[] =
-        (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
+        (getAllSubscriptions() as Subscription[] | undefined) ?? [];
       const subIndex = subscriptions.findIndex(
         (s) => s.chat_id === chatId && s.user_id === userId
       );
@@ -301,8 +299,7 @@ bot.command("start", async (ctx) => {
       }
 
       const sub = subscriptions[subIndex];
-      subscriptions.splice(subIndex, 1);
-      subData.set("subscriptions", subscriptions);
+      removeSubscription(chatId, userId);
 
       await ctx.reply(
         `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
@@ -348,14 +345,11 @@ bot.command("number", async (ctx) => {
   // Private Chat Logic
   if (ctx.chat.type === "private") {
     const subscriptions: Subscription[] =
-      (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
-    const existingSub = subscriptions.find(
-      (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
-    );
+      (getAllSubscriptions() as Subscription[] | undefined) ?? [];
+    const existingSub = findSubscription(ctx.chat.id, ctx.from.id);
 
     if (!targetNumber && existingSub) {
-      subscriptions.splice(subscriptions.indexOf(existingSub), 1);
-      subData.set("subscriptions", subscriptions);
+      removeSubscription(ctx.chat.id, ctx.from.id);
       return ctx.reply(
         `🚫 哼嗯，偶幫你取消 *${existingSub.target_number}* 號的訂閱了。醬子。`,
         { parse_mode: "Markdown" }
@@ -381,15 +375,13 @@ bot.command("number", async (ctx) => {
 
     if (isValidNumber) {
       if (numTarget > currentNumber) {
-        subscriptions.push({
-          chat_id: ctx.chat.id,
-          user_id: ctx.from.id,
-          first_name: ctx.from.first_name,
-          target_number: numTarget,
-          created_at: Date.now(),
-          message_id: ctx.message.message_id,
-        });
-        subData.set("subscriptions", subscriptions);
+        addSubscription(
+          ctx.chat.id,
+          ctx.from.id,
+          ctx.from.first_name,
+          numTarget,
+          ctx.message.message_id
+        );
         responseText += `\n👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。想取消再打一次 \`/number\` 就好。`;
       } else {
         responseText += `\n🤡 這位同學，*${numTarget}* 已經過了，你很奇欸。`;
@@ -408,10 +400,8 @@ bot.command("number", async (ctx) => {
   // Group Chat Logic
   else {
     const subscriptions: Subscription[] =
-      (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
-    const existingSub = subscriptions.find(
-      (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
-    );
+      (getAllSubscriptions() as Subscription[] | undefined) ?? [];
+    const existingSub = findSubscription(ctx.chat.id, ctx.from.id);
     const username = await getBotUsername(ctx);
 
     if (existingSub) {
@@ -491,7 +481,7 @@ bot.command("number", async (ctx) => {
 
 async function checkSubscriptions() {
   const subscriptions: Subscription[] =
-    (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
+    (getAllSubscriptions() as Subscription[] | undefined) ?? [];
   if (subscriptions.length === 0) {
     return;
   }
@@ -531,7 +521,8 @@ async function checkSubscriptions() {
     }
   }
 
-  subData.set("subscriptions", remainingSubscriptions);
+  // Update DB with remaining subscriptions
+  saveSubscriptions(remainingSubscriptions as Subscription[]);
 }
 
 setInterval(checkSubscriptions, 60 * 1000);
@@ -954,10 +945,8 @@ function getAISTools(ctx: Context) {
         }
 
         const subscriptions: Subscription[] =
-          (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
-        const existingSub = subscriptions.find(
-          (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
-        );
+          (getAllSubscriptions() as Subscription[] | undefined) ?? [];
+        const existingSub = findSubscription(ctx.chat.id, ctx.from.id);
         if (existingSub) {
           await safeReply(
             ctx,
@@ -967,15 +956,13 @@ function getAISTools(ctx: Context) {
           return { done: false } as const;
         }
 
-        subscriptions.push({
-          chat_id: ctx.chat.id,
-          user_id: ctx.from.id,
-          first_name: ctx.from.first_name,
-          target_number: numTarget,
-          created_at: Date.now(),
-          message_id: ctx.message!.message_id,
-        });
-        subData.set("subscriptions", subscriptions);
+        addSubscription(
+          ctx.chat.id,
+          ctx.from.id,
+          ctx.from.first_name,
+          numTarget,
+          ctx.message!.message_id
+        );
 
         await safeReply(
           ctx,
@@ -998,7 +985,7 @@ function getAISTools(ctx: Context) {
         }
 
         const subscriptions: Subscription[] =
-          (subData.get("subscriptions") as Subscription[] | undefined) ?? [];
+          (getAllSubscriptions() as Subscription[] | undefined) ?? [];
         const subIndex = subscriptions.findIndex(
           (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
         );
@@ -1009,8 +996,7 @@ function getAISTools(ctx: Context) {
         }
 
         const sub = subscriptions[subIndex];
-        subscriptions.splice(subIndex, 1);
-        subData.set("subscriptions", subscriptions);
+        removeSubscription(ctx.chat.id, ctx.from.id);
 
         await safeReply(
           ctx,
