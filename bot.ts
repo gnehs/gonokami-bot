@@ -653,9 +653,9 @@ function getAISTools(ctx: Context) {
         title: z.string().describe("投票標題"),
         bye_option: z
           .string()
-          .describe("提供拉麵投票中，不來的選項，像是「掰掰」、「蓋被被 😴」")
-          .optional()
-          .default("怕的是他 👑"),
+          .describe(
+            "提供拉麵投票中，不來的選項，像是「掰掰」、「蓋被被 😴」、「怕的是他 👑」"
+          ),
       }),
       execute: async ({
         title,
