@@ -650,8 +650,11 @@ function getAISTools(ctx: Context) {
       description:
         "建立拉麵點餐投票，提供人數統計功能的投票，可自訂標題與離開選項文字",
       parameters: z.object({
-        title: z.string().optional(),
-        bye_option: z.string().optional(),
+        title: z.string().describe("投票標題"),
+        bye_option: z
+          .string()
+          .describe("提供拉麵投票中，不來的選項，像是「掰掰」、「蓋被被 😴」")
+          .optional(),
       }),
       execute: async ({
         title,
