@@ -87,7 +87,7 @@ docker run -d --name gonokami-bot \
 
 ---
 
-_Zzz ～怕的是我～ Zzz ～_
+_Zzz ～怕的是他～ Zzz ～_
 
 ## 🏭 建構 production 版
 
