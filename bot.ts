@@ -1280,11 +1280,12 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     }
 
     const assistantResponse = text?.trim() ?? "";
-    if (assistantResponse) {
+    if (assistantResponse !== "") {
       history.messages.push({ role: "assistant", content: assistantResponse });
       persistChatHistories();
       await safeReply(ctx, assistantResponse, {
         reply_to_message_id: ctx.message!.message_id,
+        parse_mode: "MarkdownV2",
       });
     }
   } catch (e) {
@@ -1294,7 +1295,6 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     persistChatHistories();
     await safeReply(ctx, fallback, {
       reply_to_message_id: ctx.message!.message_id,
-      parse_mode: "Markdown",
     });
   }
 }
