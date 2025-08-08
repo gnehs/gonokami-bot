@@ -576,11 +576,6 @@ function getAISTools(ctx: Context) {
         }
         const numbers = Array.from(picks);
         const numbersStr = numbers.join(", ");
-        await safeReply(ctx, `🔮 *塔羅斯揪*\n正在召喚塔羅斯揪`, {
-          parse_mode: "Markdown",
-          reply_to_message_id: ctx.message!.message_id,
-        });
-        await ctx.api.sendChatAction(ctx.chat.id, "typing");
         const { text } = await generateText({
           model: OPENWEBUI_MODEL,
           messages: [
@@ -1299,6 +1294,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     persistChatHistories();
     await safeReply(ctx, fallback, {
       reply_to_message_id: ctx.message!.message_id,
+      parse_mode: "MarkdownV2",
     });
   }
 }
