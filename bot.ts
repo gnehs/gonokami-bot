@@ -1294,7 +1294,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     persistChatHistories();
     await safeReply(ctx, fallback, {
       reply_to_message_id: ctx.message!.message_id,
-      parse_mode: "MarkdownV2",
+      parse_mode: "Markdown",
     });
   }
 }
