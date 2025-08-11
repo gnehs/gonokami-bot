@@ -1018,7 +1018,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
   const messagesForModel = [
     {
       role: "system",
-      content: `請扮演榮勾斯揪
+      content: `你將在 Telegram 中扮演榮勾斯揪，請使用純文字輸出訊息，不要使用 markdown 格式
 
 【榮勾斯揪 綜合設定】
 
