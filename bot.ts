@@ -17,12 +17,17 @@ import {
   addSubscription,
   removeSubscription,
   findSubscription,
-  validateTargetNumber,
   getAll as getAllSubscriptions,
   saveAll as saveSubscriptions,
 } from "./utils/subscription.js";
 import { z } from "zod";
-import { openwebui } from "./providers/openwebui.js";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+
+const gateway = createOpenAICompatible({
+  name: "openai",
+  apiKey: process.env.OPENWEBUI_API_KEY,
+  baseURL: process.env.OPENWEBUI_BASE_URL,
+});
 
 // ----------------- Environment Validation -----------------
 if (!process.env.BOT_TOKEN) {
@@ -154,10 +159,9 @@ const LIMIT_MSGS = [
 // pickRandom moved to utils/telegram.js
 // ---------------------------------------------
 
-const OPENWEBUI_MODEL = openwebui(
-  process.env.OPENWEBUI_MODEL || "gpt-4.1-mini"
+const OPENWEBUI_MODEL = gateway(
+  process.env.OPENWEBUI_MODEL || "openai/gpt-oss-20b"
 );
-const TAROT_MODEL = openwebui(process.env.TAROT_MODEL || "Tarot");
 
 // ----------------- Chat Memory -----------------
 // Keep recent 10 user/assistant message pairs per chat. Older history will be summarized automatically.
@@ -1271,8 +1275,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       ({ text } = await generateText({
         model: OPENWEBUI_MODEL,
         messages: messagesForModel,
-        tools,
-        maxSteps: 3,
+        tools: tools as any,
       }));
     } catch (e) {
       console.error("LLM generation failed", e);
