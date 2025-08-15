@@ -20,6 +20,13 @@ import {
   getAll as getAllSubscriptions,
   saveAll as saveSubscriptions,
 } from "./utils/subscription.js";
+import {
+  addSticker,
+  getRandomSticker,
+  getStickersByEmoji,
+  getPopularStickers,
+  getStickerStats,
+} from "./utils/sticker.js";
 import { z } from "zod";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
@@ -543,7 +550,36 @@ registerVoteCommands(bot);
 
 // ----------------- ChatGPT Handler -----------------
 
-async function summarizeMessages(msgs: { role: string; content: string }[]) {
+async function summarizeMessages(msgs: { role: string; content: any }[]) {
+  // 將訊息轉換成適合摘要的格式
+  const messagesForSummary = msgs.map((m) => {
+    let contentText = "";
+
+    if (typeof m.content === "string") {
+      contentText = m.content;
+    } else if (Array.isArray(m.content)) {
+      // 處理工具調用格式
+      contentText = m.content
+        .map((part: any) => {
+          switch (part.type) {
+            case "text":
+              return part.text;
+            case "tool-call":
+              return `[使用工具: ${part.toolName}]`;
+            case "tool-result":
+              return `[工具結果: ${part.toolName}]`;
+            default:
+              return "[unknown content]";
+          }
+        })
+        .join(" ");
+    } else {
+      contentText = String(m.content);
+    }
+
+    return { r: m.role, c: contentText };
+  });
+
   const summaryPrompt: { role: "system" | "user"; content: string }[] = [
     {
       role: "system",
@@ -552,7 +588,7 @@ async function summarizeMessages(msgs: { role: string; content: string }[]) {
     },
     {
       role: "user",
-      content: JSON.stringify(msgs.map((m) => ({ r: m.role, c: m.content }))),
+      content: JSON.stringify(messagesForSummary),
     },
   ];
 
@@ -573,7 +609,7 @@ function getAISTools(ctx: Context) {
   return {
     tarot: {
       description: "提供塔羅牌占卜，請使用者提供問題，並提供三張牌的結果",
-      parameters: z.object({
+      inputSchema: z.object({
         question: z.string(),
       }),
       execute: async ({ question }: { question: string }) => {
@@ -616,7 +652,7 @@ function getAISTools(ctx: Context) {
     },
     get_current_number: {
       description: "Get the current queue number from the ticketing system",
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         const num = await getCurrentNumber();
         return { current_number: num };
@@ -625,7 +661,7 @@ function getAISTools(ctx: Context) {
     create_vote: {
       description:
         "Create a standard text-based poll in the chat with custom options",
-      parameters: z.object({
+      inputSchema: z.object({
         title: z.string(),
         options: z.array(z.string()).min(2).max(10),
       }),
@@ -648,7 +684,7 @@ function getAISTools(ctx: Context) {
     create_ramen_vote: {
       description:
         "Create a ramen ordering poll with headcount tracking. Use this specifically when ramen is mentioned. Provides options for ramen orders with quantity and add-ons, includes a customizable opt-out option.",
-      parameters: z.object({
+      inputSchema: z.object({
         title: z.string().describe("Title for the ramen poll"),
         bye_option: z
           .string()
@@ -720,7 +756,7 @@ function getAISTools(ctx: Context) {
     subscribe_number: {
       description:
         "Subscribe to a queue number notification. Only available in private chat.",
-      parameters: z.object({
+      inputSchema: z.object({
         target_number: z
           .number()
           .int()
@@ -796,7 +832,7 @@ function getAISTools(ctx: Context) {
     unsubscribe_number: {
       description:
         "Cancel current user's queue number subscription. Only available in private chat.",
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       execute: async () => {
         if (ctx.chat.type !== "private") {
           await safeReply(
@@ -826,6 +862,94 @@ function getAISTools(ctx: Context) {
           { parse_mode: "Markdown" }
         );
         return `Unsubscription message sent to user`;
+      },
+    },
+    send_sticker: {
+      description:
+        "發送貼圖回應，根據指定的 emoji 來選擇合適的貼圖。如果找不到對應的貼圖，會發送隨機貼圖。",
+      inputSchema: z.object({
+        emoji: z
+          .string()
+          .optional()
+          .describe(
+            "想要發送的貼圖 emoji，例如：😀、❤️、👍 等。如果未提供則發送隨機貼圖。"
+          ),
+      }),
+      execute: async ({ emoji }: { emoji?: string }) => {
+        try {
+          // 處理未傳遞 emoji 的情況
+          if (!emoji) {
+            const randomSticker = getRandomSticker();
+            if (randomSticker) {
+              await ctx.api.sendSticker(ctx.chat.id, randomSticker.id, {
+                reply_to_message_id: ctx.message!.message_id,
+              });
+              return `發送了隨機貼圖 ${randomSticker.emoji || "🤔"}`;
+            } else {
+              return `偶還沒有收藏任何貼圖，無法發送貼圖 😅`;
+            }
+          }
+
+          // 先嘗試根據 emoji 找貼圖
+          let stickers = getStickersByEmoji(emoji);
+
+          // 如果找不到對應的 emoji 貼圖，就發送隨機貼圖
+          if (stickers.length === 0) {
+            const randomSticker = getRandomSticker();
+            if (randomSticker) {
+              await ctx.api.sendSticker(ctx.chat.id, randomSticker.id, {
+                reply_to_message_id: ctx.message!.message_id,
+              });
+              return `發送了隨機貼圖 ${
+                randomSticker.emoji || "🤔"
+              }（找不到 ${emoji} 的貼圖）`;
+            } else {
+              return `偶還沒有收藏任何貼圖，無法發送 ${emoji} 貼圖 😅`;
+            }
+          }
+
+          // 從符合的貼圖中隨機選一個
+          const selectedSticker =
+            stickers[Math.floor(Math.random() * stickers.length)];
+          await ctx.api.sendSticker(ctx.chat.id, selectedSticker.id, {
+            reply_to_message_id: ctx.message!.message_id,
+          });
+
+          return `發送了 ${emoji} 貼圖！`;
+        } catch (error) {
+          console.error("發送貼圖時發生錯誤:", error);
+          return `發送貼圖失敗，偶很遜 😔`;
+        }
+      },
+    },
+    get_sticker_stats: {
+      description: "取得貼圖收藏統計資訊，包含總數量、使用次數、熱門貼圖等",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const stats = getStickerStats();
+        const popular = getPopularStickers(5);
+
+        let result = `📊 *貼圖收藏統計*\n`;
+        result += `🎯 總共收藏：${stats.totalStickers} 個貼圖\n`;
+        result += `📈 總使用次數：${stats.totalUsage} 次\n`;
+        result += `👥 貢獻者：${stats.uniqueUsers} 人\n\n`;
+
+        if (stats.mostUsedSticker) {
+          result += `🏆 最熱門：${stats.mostUsedSticker.emoji || "🤔"} (${
+            stats.mostUsedSticker.usageCount
+          } 次)\n\n`;
+        }
+
+        if (popular.length > 0) {
+          result += `📈 *熱門貼圖 TOP 5*\n`;
+          popular.forEach((sticker, index) => {
+            result += `${index + 1}. ${sticker.emoji || "🤔"} - ${
+              sticker.usageCount
+            } 次\n`;
+          });
+        }
+
+        return result;
       },
     },
   } as const;
@@ -876,7 +1000,12 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     finalUserContent = `${senderName}：${finalUserContent}`;
   }
 
-  history.messages.push({ role: "user", content: finalUserContent });
+  history.messages.push({
+    role: "user",
+    content: finalUserContent,
+    id: `msg-${Date.now()}`,
+    createdAt: new Date(),
+  });
 
   if (history.messages.length > 20) {
     const toSummarize = history.messages.splice(
@@ -890,7 +1019,8 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     });
   }
 
-  const messagesForModel = [
+  // 構建訊息陣列，包含系統訊息和歷史訊息
+  const allMessages = [
     {
       role: "system",
       content: systemPrompt,
@@ -904,25 +1034,49 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     },
   ];
 
+  // 使用 convertToModelMessages 轉換成 ModelMessage 格式
+  const messagesForModel = allMessages;
+
   const tools = getAISTools(ctx);
 
   try {
     let text: string | undefined;
+    let responseMessages: any[] = [];
+
     try {
-      ({ text } = await generateText({
+      const result = await generateText({
         model: OPENWEBUI_MODEL,
         messages: messagesForModel,
         tools: tools as any,
-      }));
+      });
+
+      text = result.text;
+      // 使用 response.messages 來獲取正確的訊息格式（包含工具調用）
+      responseMessages = result.response?.messages || [];
     } catch (e) {
       console.error("LLM generation failed", e);
       text = "挖哩咧，偶詞窮惹";
     }
 
+    // 將 response.messages 添加到 history（這些已經是正確的格式）
+    if (responseMessages.length > 0) {
+      history.messages.push(...responseMessages);
+    }
+
     const assistantResponse = text?.trim() ?? "";
+    if (assistantResponse !== "" && responseMessages.length === 0) {
+      // 只有在沒有工具調用時才添加純文字回應
+      history.messages.push({
+        role: "assistant",
+        content: assistantResponse,
+        id: `msg-${Date.now()}`,
+        createdAt: new Date(),
+      });
+    }
+
+    persistChatHistories();
+
     if (assistantResponse !== "") {
-      history.messages.push({ role: "assistant", content: assistantResponse });
-      persistChatHistories();
       await safeReply(ctx, assistantResponse, {
         reply_to_message_id: ctx.message!.message_id,
       });
@@ -930,7 +1084,12 @@ async function processLLMMessage(ctx: Context, userContent: string) {
   } catch (e) {
     console.error("chat generate error", e);
     const fallback = "挖哩咧，偶詞窮惹。";
-    history.messages.push({ role: "assistant", content: fallback });
+    history.messages.push({
+      role: "assistant",
+      content: fallback,
+      id: `msg-${Date.now()}`,
+      createdAt: new Date(),
+    });
     persistChatHistories();
     await safeReply(ctx, fallback, {
       reply_to_message_id: ctx.message!.message_id,
@@ -945,7 +1104,26 @@ bot.on("message:text", async (ctx) => {
 
 // Handle sticker messages via LLM (uses emoji as content)
 bot.on("message:sticker", async (ctx) => {
-  const emoji = ctx.message.sticker?.emoji || "🤔";
+  const sticker = ctx.message.sticker;
+  const emoji = sticker?.emoji || "🤔";
+
+  // 儲存貼圖到資料庫
+  if (sticker && ctx.from) {
+    const isNewSticker = addSticker(
+      sticker.file_id,
+      sticker.emoji,
+      sticker.set_name,
+      ctx.from.id,
+      ctx.from.first_name || "Unknown",
+      ctx.chat.id
+    );
+
+    // 如果是新貼圖，偶偷偷記錄一下 kira kira
+    if (isNewSticker) {
+      console.log(`✨ 新貼圖收藏！${emoji} 來自 ${ctx.from.first_name}`);
+    }
+  }
+
   await processLLMMessage(ctx, `[貼圖 ${emoji}]`);
 });
 
