@@ -28,6 +28,7 @@ WORKDIR /app
 # Copy compiled JS and other assets
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/data ./data
+COPY --from=builder /app/prompts ./prompts
 COPY --from=builder /app/package.json ./package.json
 COPY --from=deps /app/node_modules ./node_modules
 # Ensure data directory exists in case not copied
