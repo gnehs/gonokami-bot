@@ -615,7 +615,7 @@ function getAISTools(ctx: Context) {
       },
     },
     get_current_number: {
-      description: "取得目前號碼牌數字",
+      description: "Get the current queue number from the ticketing system",
       parameters: z.object({}),
       execute: async () => {
         const num = await getCurrentNumber();
@@ -623,7 +623,8 @@ function getAISTools(ctx: Context) {
       },
     },
     create_vote: {
-      description: "在聊天中建立普通投票，限文字選項",
+      description:
+        "Create a standard text-based poll in the chat with custom options",
       parameters: z.object({
         title: z.string(),
         options: z.array(z.string()).min(2).max(10),
@@ -641,14 +642,14 @@ function getAISTools(ctx: Context) {
           allows_multiple_answers: true,
           reply_to_message_id: ctx.message!.message_id,
         });
-        return `已傳送投票給使用者`;
+        return `Poll sent to user`;
       },
     },
     create_ramen_vote: {
       description:
-        "建立拉麵點餐投票，當提到拉麵時，請務必使用這個工具建立投票，提供人數統計功能的投票，可自訂標題與離開選項文字",
+        "Create a ramen ordering poll with headcount tracking. Use this specifically when ramen is mentioned. Provides options for ramen orders with quantity and add-ons, includes a customizable opt-out option.",
       parameters: z.object({
-        title: z.string().describe("投票標題"),
+        title: z.string().describe("Title for the ramen poll"),
         bye_option: z
           .string()
           .describe(
@@ -713,13 +714,17 @@ function getAISTools(ctx: Context) {
           votes: {},
         });
 
-        return `已傳送投票給使用者`;
+        return `Poll sent to user`;
       },
     },
     subscribe_number: {
-      description: "訂閱叫號牌，僅限私訊使用。",
+      description:
+        "Subscribe to a queue number notification. Only available in private chat.",
       parameters: z.object({
-        target_number: z.number().int().describe("要訂閱的號碼 (1001-1200)"),
+        target_number: z
+          .number()
+          .int()
+          .describe("Target queue number to subscribe (1001-1200)"),
       }),
       execute: async ({ target_number }: { target_number: number }) => {
         if (ctx.chat.type !== "private") {
@@ -785,11 +790,12 @@ function getAISTools(ctx: Context) {
           { parse_mode: "Markdown" }
         );
 
-        return `已傳送訂閱訊息給使用者`;
+        return `Subscription message sent to user`;
       },
     },
     unsubscribe_number: {
-      description: "取消目前使用者訂閱的號碼牌，僅限私訊使用。",
+      description:
+        "Cancel current user's queue number subscription. Only available in private chat.",
       parameters: z.object({}),
       execute: async () => {
         if (ctx.chat.type !== "private") {
@@ -819,7 +825,7 @@ function getAISTools(ctx: Context) {
           `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
           { parse_mode: "Markdown" }
         );
-        return `已傳送取消訂閱訊息給使用者`;
+        return `Unsubscription message sent to user`;
       },
     },
   } as const;
