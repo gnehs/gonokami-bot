@@ -1058,7 +1058,19 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       responseMessages = result.response?.messages || [];
     } catch (e) {
       console.error("LLM generation failed", e);
-      text = "挖哩咧，偶詞窮惹";
+      // 嘗試發送隨機貼圖，如果沒有貼圖就發送文字
+      const randomSticker = getRandomSticker();
+      if (randomSticker) {
+        try {
+          await ctx.api.sendSticker(ctx.chat.id, randomSticker.id);
+          return; // 成功發送貼圖後直接返回
+        } catch (stickerError) {
+          console.error("發送隨機貼圖失敗:", stickerError);
+          text = "挖哩咧，偶詞窮惹";
+        }
+      } else {
+        text = "挖哩咧，偶詞窮惹";
+      }
     }
 
     // 將 response.messages 添加到 history（這些已經是正確的格式）
