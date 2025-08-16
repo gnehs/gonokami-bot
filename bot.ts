@@ -649,7 +649,9 @@ function getAISTools(ctx: Context) {
             .replace(/!\[.*\]\(.*\)/g, "")
             .replace(/\n\n\n/g, "\n\n");
 
-        return result;
+        await safeReply(ctx, result, { parse_mode: "Markdown" });
+
+        return `[已發送塔羅結果]`;
       },
     },
     get_current_number: {
@@ -680,7 +682,7 @@ function getAISTools(ctx: Context) {
           allows_multiple_answers: true,
           reply_to_message_id: ctx.message!.message_id,
         });
-        return `Poll sent to user`;
+        return `[Poll sent to user]`;
       },
     },
     create_ramen_vote: {
@@ -691,7 +693,7 @@ function getAISTools(ctx: Context) {
         bye_option: z
           .string()
           .describe(
-            "提供拉麵投票中，不來的選項，像是「掰掰」、「蓋被被 😴」、「怕的是他 👑」，請隨便選一個就好"
+            "提供拉麵投票中，不來的選項，像是「掰掰」、「蓋被被 😴」、「怕的是他 👑」，請隨便想一個就好"
           ),
       }),
       execute: async ({
@@ -752,7 +754,7 @@ function getAISTools(ctx: Context) {
           votes: {},
         });
 
-        return `Poll sent to user`;
+        return `[Poll sent to user]`;
       },
     },
     subscribe_number: {
@@ -1094,6 +1096,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     if (assistantResponse !== "") {
       await safeReply(ctx, assistantResponse, {
         reply_to_message_id: ctx.message!.message_id,
+        parse_mode: "Markdown",
       });
     }
   } catch (e) {
