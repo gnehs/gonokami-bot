@@ -597,6 +597,7 @@ async function summarizeMessages(msgs: { role: string; content: any }[]) {
       model: OPENWEBUI_MODEL,
       messages: summaryPrompt,
       temperature: 0.3,
+      maxRetries: 5,
     });
     return text.trim();
   } catch (err: any) {
@@ -636,6 +637,7 @@ function getAISTools(ctx: Context) {
               content: question,
             },
           ],
+          maxRetries: 5,
         });
         // remove <think> and </think>
         const result =
@@ -1048,6 +1050,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
         model: OPENWEBUI_MODEL,
         messages: messagesForModel,
         tools: tools as any,
+        maxRetries: 5,
       });
 
       text = result.text;
