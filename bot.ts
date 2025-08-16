@@ -82,7 +82,35 @@ interface UsageStats {
 }
 
 function getTodayDate(): string {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  // Use Taipei timezone (UTC+8)
+  const taipeiDate = new Date().toLocaleDateString("sv-SE", {
+    timeZone: "Asia/Taipei",
+  }); // Returns YYYY-MM-DD format
+  return taipeiDate;
+}
+
+function getTimeUntilReset(): string {
+  // Get current time in Taipei timezone
+  const now = new Date();
+  const taipeiNow = new Date(
+    now.toLocaleString("en-US", { timeZone: "Asia/Taipei" })
+  );
+
+  // Get midnight of tomorrow in Taipei timezone
+  const tomorrow = new Date(taipeiNow);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+
+  // Calculate difference
+  const diff = tomorrow.getTime() - taipeiNow.getTime();
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+  if (hours > 0) {
+    return `${hours} 小時 ${minutes} 分鐘`;
+  } else {
+    return `${minutes} 分鐘`;
+  }
 }
 
 function checkAndIncrementQuota(ctx: Context): boolean {
@@ -158,15 +186,19 @@ function checkAndIncrementQuota(ctx: Context): boolean {
 }
 
 // -------- Quota limit messages & helper --------
-const LIMIT_MSGS = [
-  "😴 斯揪累累要睡覺了，明天再聊喔～",
-  "🛌 斯揪要去蓋被被曬太陽了，明天再跟你 LDS～",
-  "⏰ 斯揪先休息，kira kira 明天見！",
-  "🍯 蜂蜜吃完了，斯揪沒電啦，明天再說 886～",
-  "😴 斯揪累累要睡覺了，明天再嗨吧～",
-  "🛌 斯揪去王國午休，明天再來 KUSO～",
-  "🍯 蜂蜜耗盡，斯揪要充電，這裡今天先到此為止 886～",
-];
+function getLimitMessage(): string {
+  const timeLeft = getTimeUntilReset();
+  const msgs = [
+    `😴 斯揪累累要睡覺了，再等 ${timeLeft}之後就能繼續聊喔～`,
+    `🛌 斯揪要去蓋被被曬太陽了，${timeLeft}之後再跟你 LDS～`,
+    `⏰ 斯揪先休息，再等 ${timeLeft}之後就 kira kira 回來！`,
+    `🍯 蜂蜜吃完了，斯揪沒電啦，${timeLeft}之後再說 886～`,
+    `😴 斯揪累累要睡覺了，${timeLeft}後再嗨吧～`,
+    `🛌 斯揪去王國午休，${timeLeft}後再來 KUSO～`,
+    `🍯 蜂蜜耗盡，斯揪要充電，${timeLeft}之後再繼續 886～`,
+  ];
+  return pickRandom(msgs);
+}
 
 // pickRandom moved to utils/telegram.js
 // ---------------------------------------------
@@ -1139,7 +1171,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
 
   // ----- Daily quota enforcement -----
   if (!checkAndIncrementQuota(ctx)) {
-    const limitText = pickRandom(LIMIT_MSGS);
+    const limitText = getLimitMessage();
     await safeReply(ctx, limitText, {
       reply_to_message_id: ctx.message!.message_id,
     });
