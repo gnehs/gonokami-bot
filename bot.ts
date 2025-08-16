@@ -1172,6 +1172,12 @@ async function processLLMMessage(ctx: Context, userContent: string) {
   // ----- Daily quota enforcement -----
   if (!checkAndIncrementQuota(ctx)) {
     const limitText = getLimitMessage();
+    const randomSticker = getRandomSticker();
+    if (randomSticker && Math.random() < 0.5) {
+      await ctx.api.sendSticker(ctx.chat.id, randomSticker.id, {
+        reply_to_message_id: ctx.message!.message_id,
+      });
+    }
     await safeReply(ctx, limitText, {
       reply_to_message_id: ctx.message!.message_id,
     });
