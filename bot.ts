@@ -1038,8 +1038,15 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     },
   ];
 
-  // 使用 convertToModelMessages 轉換成 ModelMessage 格式
-  const messagesForModel = allMessages;
+  // 清理訊息格式，移除可能導致 API 錯誤的無效工具訊息
+  const messagesForModel = allMessages.filter((msg, index) => {
+    // 如果是 tool 角色的訊息，檢查前一個訊息是否有 tool_calls
+    if (msg.role === "tool") {
+      const prevMsg = allMessages[index - 1];
+      return prevMsg && (prevMsg as any).tool_calls;
+    }
+    return true;
+  });
 
   const tools = getAISTools(ctx);
 
@@ -1075,9 +1082,20 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       }
     }
 
-    // 將 response.messages 添加到 history（這些已經是正確的格式）
+    // 處理回應訊息，確保格式正確
     if (responseMessages.length > 0) {
-      history.messages.push(...responseMessages);
+      // 過濾和清理 response.messages，確保沒有無效的工具訊息
+      const validMessages = responseMessages.filter((msg: any) => {
+        // 確保 tool 角色的訊息有正確的前置訊息
+        if (msg.role === "tool") {
+          // 檢查前一個訊息是否有 tool_calls
+          const prevMsg = responseMessages[responseMessages.indexOf(msg) - 1];
+          return prevMsg && prevMsg.tool_calls;
+        }
+        return true;
+      });
+
+      history.messages.push(...validMessages);
     }
 
     const assistantResponse = text?.trim() ?? "";
