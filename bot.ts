@@ -1212,7 +1212,9 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       role: "system",
       content: systemPrompt + memoryContext,
     },
-    ...history.messages,
+    ...history.messages.filter(
+      (msg) => msg.role === "assistant" || msg.role === "user"
+    ),
     {
       role: "system",
       content: `username：${ctx.message!.from.last_name} ${
