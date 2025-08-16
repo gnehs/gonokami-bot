@@ -10,7 +10,7 @@ import JsonFileDb from "./utils/db.js";
 import { updatePollData } from "./utils/poll.js";
 import { registerVoteCommands } from "./commands/vote.js";
 import fs from "fs";
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { getCurrentNumber } from "./utils/number.js";
 import {
   Subscription,
@@ -959,6 +959,22 @@ function getAISTools(ctx: Context) {
   } as const;
 }
 
+// 工具使用摘要函數，將工具調用轉換為簡單的系統訊息
+function summarizeToolUsage(responseMessages: any[]): string | null {
+  const toolUsages: string[] = [];
+
+  for (const msg of responseMessages) {
+    if (msg.role === "assistant" && msg.tool_calls) {
+      for (const toolCall of msg.tool_calls) {
+        const toolName = toolCall.toolName || toolCall.function?.name;
+        toolUsages.push(`使用了 ${toolName} 工具`);
+      }
+    }
+  }
+
+  return toolUsages.length > 0 ? toolUsages.join(", ") : null;
+}
+
 // Core handler shared by both text and sticker messages
 async function processLLMMessage(ctx: Context, userContent: string) {
   const botName = await getBotUsername(ctx);
@@ -1038,14 +1054,18 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     },
   ];
 
-  // 清理訊息格式，移除可能導致 API 錯誤的無效工具訊息
-  const messagesForModel = allMessages.filter((msg, index) => {
-    // 如果是 tool 角色的訊息，檢查前一個訊息是否有 tool_calls
-    if (msg.role === "tool") {
-      const prevMsg = allMessages[index - 1];
-      return prevMsg && (prevMsg as any).tool_calls;
+  // 簡化訊息處理：移除所有工具調用相關訊息，只保留純文字對話
+  const messagesForModel = allMessages.filter((msg) => {
+    // 只保留 system、user、assistant 的純文字訊息
+    if (msg.role === "system" || msg.role === "user") {
+      return true;
     }
-    return true;
+    if (msg.role === "assistant") {
+      // 如果 assistant 訊息有 tool_calls，跳過（避免 API 錯誤）
+      return !(msg as any).tool_calls;
+    }
+    // 跳過所有 tool 角色的訊息
+    return false;
   });
 
   const tools = getAISTools(ctx);
@@ -1055,16 +1075,21 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     let responseMessages: any[] = [];
 
     try {
+      // 使用 AI SDK 正確的工具調用處理方式
       const result = await generateText({
         model: OPENWEBUI_MODEL,
         messages: messagesForModel,
         tools: tools as any,
         maxRetries: 5,
+        stopWhen: stepCountIs(5), // 使用 stopWhen 替代 maxSteps
+        // 禁用並行工具調用以避免 tool_call_id 錯誤
+        toolChoice: "auto",
       });
 
       text = result.text;
-      // 使用 response.messages 來獲取正確的訊息格式（包含工具調用）
-      responseMessages = result.response?.messages || [];
+      // 取得完整的 response 物件以獲取正確的訊息格式
+      const response = await result.response;
+      responseMessages = response.messages || [];
     } catch (e) {
       console.error("LLM generation failed", e);
       // 嘗試發送隨機貼圖，如果沒有貼圖就發送文字
@@ -1082,37 +1107,34 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       }
     }
 
-    // 處理回應訊息，確保格式正確
-    if (responseMessages.length > 0) {
-      // 過濾和清理 response.messages，確保沒有無效的工具訊息
-      const validMessages = responseMessages.filter((msg: any) => {
-        // 確保 tool 角色的訊息有正確的前置訊息
-        if (msg.role === "tool") {
-          // 檢查前一個訊息是否有 tool_calls
-          const prevMsg = responseMessages[responseMessages.indexOf(msg) - 1];
-          return prevMsg && prevMsg.tool_calls;
-        }
-        return true;
-      });
-
-      history.messages.push(...validMessages);
-    }
-
-    const assistantResponse = text?.trim() ?? "";
-    if (assistantResponse !== "" && responseMessages.length === 0) {
-      // 只有在沒有工具調用時才添加純文字回應
+    // 新策略：不記錄複雜的工具調用訊息，而是用系統訊息記錄結果
+    if (text && text.trim() !== "") {
+      // 只記錄最終的文字回應，不記錄工具調用的中間過程
       history.messages.push({
         role: "assistant",
-        content: assistantResponse,
+        content: text.trim(),
         id: `msg-${Date.now()}`,
         createdAt: new Date(),
       });
+
+      // 如果有工具調用，添加系統訊息記錄工具使用情況（用於上下文）
+      if (responseMessages.length > 0) {
+        const toolUsageSummary = summarizeToolUsage(responseMessages);
+        if (toolUsageSummary) {
+          history.messages.push({
+            role: "system",
+            content: `[工具使用記錄] ${toolUsageSummary}`,
+            id: `tool-summary-${Date.now()}`,
+            createdAt: new Date(),
+          });
+        }
+      }
     }
 
     persistChatHistories();
 
-    if (assistantResponse !== "") {
-      await safeReply(ctx, assistantResponse, {
+    if (text && text.trim() !== "") {
+      await safeReply(ctx, text.trim(), {
         reply_to_message_id: ctx.message!.message_id,
         parse_mode: "Markdown",
       });
