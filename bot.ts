@@ -35,6 +35,7 @@ const gateway = createOpenAICompatible({
   apiKey: process.env.OPENWEBUI_API_KEY,
   baseURL: process.env.OPENWEBUI_BASE_URL,
 });
+
 // ----------------- System prompt for AI generation -----------------
 const systemPrompt = fs.readFileSync("./prompts/rongou-sj.md", "utf8").trim();
 const systemPromptTarot = fs
@@ -176,15 +177,34 @@ const OPENWEBUI_MODEL = gateway(
 
 // ----------------- Chat Memory -----------------
 // Keep recent 10 user/assistant message pairs per chat. Older history will be summarized automatically.
-const chatHistories = new Map<number, { messages: any[] }>();
+interface ChatHistory {
+  messages: any[];
+  memories: Memory[];
+}
+
+interface Memory {
+  id: string;
+  content: string;
+  createdAt: Date;
+  userName?: string; // 記錄是誰說的
+  userId?: number; // 使用者ID
+  chatId: number; // 聊天室ID
+}
+
+const chatHistories = new Map<number, ChatHistory>();
 
 // Load existing histories from disk
 const storedHistories = historyData.get("histories") as
-  | Record<string, { messages: any[] }>
+  | Record<string, ChatHistory>
   | undefined;
 if (storedHistories) {
   for (const [id, data] of Object.entries(storedHistories)) {
-    chatHistories.set(Number(id), data);
+    // 相容舊格式：如果沒有 memories 欄位，就初始化為空陣列
+    const chatHistory: ChatHistory = {
+      messages: data.messages || [],
+      memories: data.memories || [],
+    };
+    chatHistories.set(Number(id), chatHistory);
   }
 }
 
@@ -956,6 +976,78 @@ function getAISTools(ctx: Context) {
         return result;
       },
     },
+    remember_information: {
+      description:
+        "記住重要的資訊，用於長期記憶。適用於記住使用者的偏好、重要事件、個人資訊等",
+      inputSchema: z.object({
+        content: z.string().describe("要記住的內容"),
+      }),
+      execute: async ({ content }: { content: string }) => {
+        try {
+          const userName = ctx.from?.first_name || "Unknown";
+          const userId = ctx.from?.id;
+          addMemory(ctx.chat.id, content, userName, userId);
+          return `✅ 偶記住了：${content}`;
+        } catch (error) {
+          return `❌ 記憶儲存失敗：${error}`;
+        }
+      },
+    },
+    search_memories: {
+      description: "搜尋你之前記住的資訊（只能搜尋自己的記憶）",
+      inputSchema: z.object({
+        query: z
+          .string()
+          .optional()
+          .describe("搜尋關鍵字，不提供則顯示你的所有記憶"),
+      }),
+      execute: async ({ query }: { query?: string }) => {
+        // 安全措施：只能搜尋自己的記憶
+        const memories = searchMemories(ctx.chat.id);
+
+        if (memories.length === 0) {
+          return query
+            ? "🤔 偶沒有找到你的相關記憶欸"
+            : "🤔 偶還沒有你的任何記憶欸";
+        }
+
+        let result = `🧠 *找到 ${memories.length} 個你的記憶*\n\n`;
+        memories.slice(0, 15).forEach((memory, index) => {
+          const date = new Date(memory.createdAt).toLocaleDateString();
+          result += `${index + 1}. ${memory.content}\n`;
+          result += `   📅 ${date}`;
+          if (memory.userName) {
+            result += ` | 👤 ${memory.userName}`;
+          }
+          result += ` | ID: ${memory.id.slice(-6)}\n\n`;
+        });
+
+        return result;
+      },
+    },
+    delete_memory: {
+      description: "刪除不需要的記憶，需要提供記憶ID的後6碼",
+      inputSchema: z.object({
+        memoryId: z.string().describe("要刪除的記憶ID後6碼"),
+      }),
+      execute: async ({ memoryId }: { memoryId: string }) => {
+        const history = chatHistories.get(ctx.chat.id);
+        if (!history) {
+          return "❌ 找不到聊天記錄";
+        }
+
+        // 安全措施：尋找符合後6碼且屬於目前使用者的記憶
+        const fullMemory = history.memories.find(
+          (m) => m.id.endsWith(memoryId) && m.userId === ctx.from?.id
+        );
+        if (!fullMemory) {
+          return "❌ 找不到該記憶，或你沒有權限刪除（只能刪除自己的記憶）";
+        }
+
+        const success = deleteMemory(ctx.chat.id, fullMemory.id);
+        return success ? `✅ 已刪除記憶：${fullMemory.content}` : "❌ 刪除失敗";
+      },
+    },
   } as const;
 }
 
@@ -973,6 +1065,71 @@ function summarizeToolUsage(responseMessages: any[]): string | null {
   }
 
   return toolUsages.length > 0 ? toolUsages.join(", ") : null;
+}
+
+// ----------------- Memory Management Functions -----------------
+
+function generateMemoryId(): string {
+  return `mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function addMemory(
+  chatId: number,
+  content: string,
+  userName?: string,
+  userId?: number
+): Memory {
+  const history = chatHistories.get(chatId);
+  if (!history) {
+    throw new Error("Chat history not found");
+  }
+
+  const memory: Memory = {
+    id: generateMemoryId(),
+    content,
+    createdAt: new Date(),
+    userName,
+    userId,
+    chatId,
+  };
+
+  // 限制記憶最多一百條，超過時移除最舊的
+  history.memories.push(memory);
+  if (history.memories.length > 100) {
+    history.memories.sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    history.memories = history.memories.slice(-100); // 保留最新的100條
+  }
+
+  persistChatHistories();
+  return memory;
+}
+
+function searchMemories(chatId: number): Memory[] {
+  const history = chatHistories.get(chatId);
+  if (!history) {
+    return [];
+  }
+
+  return history.memories;
+}
+
+function deleteMemory(chatId: number, memoryId: string): boolean {
+  const history = chatHistories.get(chatId);
+  if (!history) {
+    return false;
+  }
+
+  const index = history.memories.findIndex((m) => m.id === memoryId);
+  if (index === -1) {
+    return false;
+  }
+
+  history.memories.splice(index, 1);
+  persistChatHistories();
+  return true;
 }
 
 // Core handler shared by both text and sticker messages
@@ -995,7 +1152,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
   const chatId = ctx.chat.id;
   let history = chatHistories.get(chatId);
   if (!history) {
-    history = { messages: [] };
+    history = { messages: [], memories: [] };
     chatHistories.set(chatId, history);
   }
 
@@ -1039,11 +1196,21 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     });
   }
 
+  // 獲取相關的記憶並添加到上下文（限制為聊天室內的記憶）
+  const recentMemories = searchMemories(chatId);
+  const memoryContext =
+    recentMemories.length > 0
+      ? `\n\n相關記憶：\n${recentMemories
+          .slice(0, 5)
+          .map((m) => `- ${m.content} (${m.userName || "Unknown"})`)
+          .join("\n")}`
+      : "";
+
   // 構建訊息陣列，包含系統訊息和歷史訊息
   const allMessages = [
     {
       role: "system",
-      content: systemPrompt,
+      content: systemPrompt + memoryContext,
     },
     ...history.messages,
     {
