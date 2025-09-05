@@ -282,6 +282,15 @@ function shouldRespond(ctx: Context, botName: string): boolean {
 
 // safeReply & safeSendMessage moved to utils/telegram.js
 
+// Safely build a user's display name without showing "undefined"
+function getUserDisplayName(user?: { first_name?: string; last_name?: string; username?: string }): string {
+  if (!user) return "User";
+  const parts = [user.first_name, user.last_name].filter((p) => !!p && p.trim().length > 0) as string[];
+  if (parts.length > 0) return parts.join(" ");
+  if (user.username && user.username.trim().length > 0) return user.username;
+  return "User";
+}
+
 bot.command("start", async (ctx) => {
   const payloadStr = ctx.message?.text?.split(" ").slice(1).join(" ") || "";
   logActivity("start", {
@@ -1204,14 +1213,14 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       repliedContent = `[貼圖 ${replyMsg.sticker.emoji || ""}]`;
 
     if (repliedContent) {
-      repliedContent = `${replyMsg.from?.first_name || ""}：${repliedContent}`;
+      repliedContent = `${getUserDisplayName(replyMsg.from)}：${repliedContent}`;
       finalUserContent = `> ${repliedContent}\n\n${userContent}`;
     }
   }
 
   // 在群組聊天室中，在訊息前加入發話者名稱，讓 LLM 能識別說話者
   if (ctx.chat.type !== "private") {
-    const senderName = ctx.from?.first_name || "User";
+    const senderName = getUserDisplayName(ctx.from as any);
     finalUserContent = `${senderName}：${finalUserContent}`;
   }
 
@@ -1255,9 +1264,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     ),
     {
       role: "user",
-      content: `username：${ctx.message!.from.last_name} ${
-        ctx.message!.from.first_name
-      }`,
+      content: `username：${getUserDisplayName(ctx.message!.from as any)}`,
     },
   ];
 
