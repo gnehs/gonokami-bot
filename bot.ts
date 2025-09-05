@@ -283,9 +283,15 @@ function shouldRespond(ctx: Context, botName: string): boolean {
 // safeReply & safeSendMessage moved to utils/telegram.js
 
 // Safely build a user's display name without showing "undefined"
-function getUserDisplayName(user?: { first_name?: string; last_name?: string; username?: string }): string {
+function getUserDisplayName(user?: {
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+}): string {
   if (!user) return "User";
-  const parts = [user.first_name, user.last_name].filter((p) => !!p && p.trim().length > 0) as string[];
+  const parts = [user.first_name, user.last_name].filter(
+    (p) => !!p && p.trim().length > 0
+  ) as string[];
   if (parts.length > 0) return parts.join(" ");
   if (user.username && user.username.trim().length > 0) return user.username;
   return "User";
@@ -1213,7 +1219,9 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       repliedContent = `[貼圖 ${replyMsg.sticker.emoji || ""}]`;
 
     if (repliedContent) {
-      repliedContent = `${getUserDisplayName(replyMsg.from)}：${repliedContent}`;
+      repliedContent = `${getUserDisplayName(
+        replyMsg.from
+      )}：${repliedContent}`;
       finalUserContent = `> ${repliedContent}\n\n${userContent}`;
     }
   }
