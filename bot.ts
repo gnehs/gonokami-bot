@@ -1229,7 +1229,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     );
     const summary = await summarizeMessages(toSummarize);
     history.messages.unshift({
-      role: "system",
+      role: "user",
       content: `過去對話摘要：${summary}`,
     });
   }
@@ -1254,7 +1254,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       (msg) => msg.role === "assistant" || msg.role === "user"
     ),
     {
-      role: "system",
+      role: "user",
       content: `username：${ctx.message!.from.last_name} ${
         ctx.message!.from.first_name
       }`,
