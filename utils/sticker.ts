@@ -1,5 +1,4 @@
 import fs from "fs";
-import path from "path";
 
 export interface StickerData {
   id: string; // Telegram sticker file_id

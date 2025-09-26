@@ -1,5 +1,5 @@
-import { Bot, Context } from "grammy";
-import { hash, safeReply } from "../utils/telegram.js";
+import { Bot } from "grammy";
+import { hash } from "../utils/telegram.js";
 import { voteData, updatePollData, parsePollResult } from "../utils/poll.js";
 
 /**

@@ -341,8 +341,6 @@ bot.command("start", async (ctx) => {
         return ctx.reply("🤡 都跟你說過號了，你很奇欸。");
       }
 
-      const subscriptions: Subscription[] =
-        (getAllSubscriptions() as Subscription[] | undefined) ?? [];
       const existingSub = findSubscription(chatId, userId);
 
       if (existingSub) {
