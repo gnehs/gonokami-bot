@@ -1096,20 +1096,46 @@ function getAISTools(ctx: Context) {
   } as const;
 }
 
-// 工具使用摘要函數，將工具調用轉換為簡單的系統訊息
+// 工具使用摘要函數，將工具調用轉換為詳細的系統訊息
 function summarizeToolUsage(responseMessages: any[]): string | null {
-  const toolUsages: string[] = [];
+  const toolMap = new Map<string, { name: string; args: any; result?: any }>();
 
   for (const msg of responseMessages) {
     if (msg.role === "assistant" && msg.tool_calls) {
       for (const toolCall of msg.tool_calls) {
-        const toolName = toolCall.toolName || toolCall.function?.name;
-        toolUsages.push(`使用了 ${toolName} 工具`);
+        const id = toolCall.toolCallId || (toolCall as any).id;
+        const name = toolCall.toolName || (toolCall as any).function?.name;
+        const args = toolCall.args || (toolCall as any).function?.arguments;
+        if (id) {
+          toolMap.set(id, { name, args });
+        }
+      }
+    } else if (msg.role === "tool") {
+      const id = msg.toolCallId || (msg as any).id;
+      const result = msg.content;
+      if (id && toolMap.has(id)) {
+        toolMap.get(id)!.result = result;
       }
     }
   }
 
-  return toolUsages.length > 0 ? toolUsages.join(", ") : null;
+  if (toolMap.size === 0) return null;
+
+  const summaries = Array.from(toolMap.values()).map((t) => {
+    let argStr = typeof t.args === "string" ? t.args : JSON.stringify(t.args);
+    if (argStr === "{}" || !argStr) argStr = "";
+
+    let resStr = "";
+    if (t.result) {
+      resStr = ` ⮕ ${
+        typeof t.result === "string" ? t.result : JSON.stringify(t.result)
+      }`;
+    }
+
+    return `🔧 使用工具 ${t.name}${argStr}${resStr}`;
+  });
+
+  return summaries.join("\n");
 }
 
 // ----------------- Memory Management Functions -----------------
@@ -1333,6 +1359,29 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     }
 
     // 新策略：不記錄複雜的工具調用訊息，而是用系統訊息記錄結果
+    // 記錄工具調用（不論是否有文字回覆）
+    if (responseMessages.length > 0) {
+      const toolUsageSummary = summarizeToolUsage(responseMessages);
+      if (toolUsageSummary) {
+        history.messages.push({
+          role: "system",
+          content: toolUsageSummary,
+          id: `tool-summary-${Date.now()}`,
+          createdAt: new Date(),
+        });
+      }
+    }
+
+    // 如果 AI 真的沒說話但有調用工具，給一個預設回覆
+    if ((!text || text.trim() === "") && responseMessages.length > 0) {
+      const hasToolUse = responseMessages.some(
+        (m) => m.role === "assistant" && m.tool_calls
+      );
+      if (hasToolUse) {
+        text = "醬子。怕的是他。✨";
+      }
+    }
+
     if (text && text.trim() !== "") {
       // 只記錄最終的文字回應，不記錄工具調用的中間過程
       history.messages.push({
@@ -1341,19 +1390,6 @@ async function processLLMMessage(ctx: Context, userContent: string) {
         id: `msg-${Date.now()}`,
         createdAt: new Date(),
       });
-
-      // 如果有工具調用，添加系統訊息記錄工具使用情況（用於上下文）
-      if (responseMessages.length > 0) {
-        const toolUsageSummary = summarizeToolUsage(responseMessages);
-        if (toolUsageSummary) {
-          history.messages.push({
-            role: "system",
-            content: `[工具使用記錄] ${toolUsageSummary}`,
-            id: `tool-summary-${Date.now()}`,
-            createdAt: new Date(),
-          });
-        }
-      }
     }
 
     persistChatHistories();
