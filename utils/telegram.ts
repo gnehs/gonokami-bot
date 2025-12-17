@@ -22,16 +22,23 @@ export async function safeReply(
   text: string,
   options: Parameters<Context["reply"]>[1] = {}
 ) {
+  const opts = { ...(options || {}) } as Record<string, unknown>;
   try {
-    return await ctx.reply(text, options as any);
+    return await ctx.reply(text, opts as any);
   } catch (err) {
-    if (
-      err instanceof GrammyError &&
-      err.description.includes("message to be replied not found")
-    ) {
-      const opts = { ...(options || {}) } as Record<string, unknown>;
-      delete opts.reply_to_message_id;
-      return await ctx.api.sendMessage(ctx.chat.id, text, opts as any);
+    if (err instanceof GrammyError) {
+      let retry = false;
+      if (err.description.includes("message to be replied not found")) {
+        delete opts.reply_to_message_id;
+        retry = true;
+      }
+      if (err.description.includes("can't parse entities")) {
+        delete opts.parse_mode;
+        retry = true;
+      }
+      if (retry) {
+        return await ctx.api.sendMessage(ctx.chat.id, text, opts as any);
+      }
     }
     throw err;
   }
@@ -48,16 +55,55 @@ export function safeSendMessage(
     | Parameters<Context["api"]["sendMessage"]>[2]
     | Record<string, unknown> = {}
 ) {
+  const opts = { ...(options || {}) } as Record<string, unknown>;
   return botInstance.api
-    .sendMessage(chatId, text, options as any)
+    .sendMessage(chatId, text, opts as any)
+    .catch((err) => {
+      if (err instanceof GrammyError) {
+        let retry = false;
+        if (err.description.includes("message to be replied not found")) {
+          delete opts.reply_to_message_id;
+          retry = true;
+        }
+        if (err.description.includes("can't parse entities")) {
+          delete opts.parse_mode;
+          retry = true;
+        }
+        if (retry) {
+          return botInstance.api.sendMessage(chatId, text, opts as any);
+        }
+      }
+      throw err;
+    });
+}
+
+/**
+ * Safe variant of bot.api.editMessageText with Markdown fallback.
+ */
+export function safeEditMessageText(
+  botInstance: Bot,
+  chatId: number,
+  messageId: number,
+  text: string,
+  options:
+    | Parameters<Context["api"]["editMessageText"]>[3]
+    | Record<string, unknown> = {}
+) {
+  const opts = { ...(options || {}) } as Record<string, unknown>;
+  return botInstance.api
+    .editMessageText(chatId, messageId, text, opts as any)
     .catch((err) => {
       if (
         err instanceof GrammyError &&
-        err.description.includes("message to be replied not found")
+        err.description.includes("can't parse entities")
       ) {
-        const opts = { ...(options || {}) } as Record<string, unknown>;
-        delete opts.reply_to_message_id;
-        return botInstance.api.sendMessage(chatId, text, opts as any);
+        delete opts.parse_mode;
+        return botInstance.api.editMessageText(
+          chatId,
+          messageId,
+          text,
+          opts as any
+        );
       }
       throw err;
     });

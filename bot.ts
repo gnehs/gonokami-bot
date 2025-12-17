@@ -3,6 +3,7 @@ import { Bot, Context } from "grammy";
 import {
   safeReply,
   safeSendMessage,
+  safeEditMessageText,
   hash,
   pickRandom,
 } from "./utils/telegram.js";
