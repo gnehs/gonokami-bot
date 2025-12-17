@@ -17,15 +17,16 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^1.0.7",
     "@ai-sdk/provider-utils": "^2.2.8",
-    "ai": "^5.0.13",
-    "dotenv": "^16.5.0",
-    "grammy": "^1.36.3",
+    "@openrouter/ai-sdk-provider": "^1.5.4",
+    "ai": "^5.0.114",
+    "dotenv": "^17",
+    "grammy": "^1.38.4",
     "ts-node": "^10.9.2",
-    "zod": "^3"
+    "zod": "^4"
   },
   "devDependencies": {
-    "@types/node": "^24.0.3",
-    "nodemon": "^3.1.10",
-    "typescript": "^5.8.3"
+    "@types/node": "^25",
+    "nodemon": "^3.1.11",
+    "typescript": "^5.9.3"
   }
 }

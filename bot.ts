@@ -28,10 +28,9 @@ import {
   getStickerStats,
 } from "./utils/sticker.js";
 import { z } from "zod";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 
-const gateway = createOpenAICompatible({
-  name: "openai",
+const gateway = createOpenRouter({
   apiKey: process.env.OPENWEBUI_API_KEY,
   baseURL: process.env.OPENWEBUI_BASE_URL,
 });
@@ -1304,6 +1303,11 @@ async function processLLMMessage(ctx: Context, userContent: string) {
         stopWhen: stepCountIs(5), // 使用 stopWhen 替代 maxSteps
         // 禁用並行工具調用以避免 tool_call_id 錯誤
         toolChoice: "auto",
+        providerOptions: {
+          openrouter: {
+            reasoning: { effort: "minimal", enabled: true },
+          },
+        },
       });
 
       text = result.text;
