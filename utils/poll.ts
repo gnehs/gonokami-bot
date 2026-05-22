@@ -1,4 +1,4 @@
-import JsonFileDb from "./db.js";
+import JsonFileDb from "./db.ts";
 
 // Centralised vote database instance
 export const voteData = new JsonFileDb("votes.json");

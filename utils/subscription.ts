@@ -1,4 +1,4 @@
-import JsonFileDb from "./db.js";
+import JsonFileDb from "./db.ts";
 
 export interface Subscription {
   chat_id: number;

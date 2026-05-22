@@ -1,6 +1,6 @@
-import { Bot } from "grammy";
-import { hash } from "../utils/telegram.js";
-import { voteData, updatePollData, parsePollResult } from "../utils/poll.js";
+import type { Bot } from "grammy";
+import { hash } from "../utils/telegram.ts";
+import { voteData, updatePollData, parsePollResult } from "../utils/poll.ts";
 
 /**
  * Register vote-related commands and callbacks on the provided bot instance.

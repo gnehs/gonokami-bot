@@ -5,28 +5,28 @@
   "description": "",
   "main": "bot.ts",
   "scripts": {
-    "start": "node --loader ts-node/esm --no-warnings=ExperimentalWarning bot.ts",
-    "build": "tsc -p .",
-    "start:prod": "node dist/bot.js",
+    "start": "node bot.ts",
+    "dev": "nodemon --exec node bot.ts",
+    "typecheck": "tsc -p . --noEmit",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=22.18"
+  },
   "packageManager": "pnpm@10.11.0",
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^1.0.7",
-    "@ai-sdk/provider-utils": "^2.2.8",
-    "@openrouter/ai-sdk-provider": "^1.5.4",
-    "ai": "^5.0.114",
-    "dotenv": "^17",
-    "grammy": "^1.38.4",
-    "ts-node": "^10.9.2",
-    "zod": "^4"
+    "@openrouter/ai-sdk-provider": "^2.9.0",
+    "ai": "^6.0.190",
+    "dotenv": "^17.4.2",
+    "grammy": "^1.43.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^25",
-    "nodemon": "^3.1.11",
-    "typescript": "^5.9.3"
+    "@types/node": "^25.9.1",
+    "nodemon": "^3.1.14",
+    "typescript": "^6.0.3"
   }
 }

@@ -1,4 +1,5 @@
-import { Bot, Context, GrammyError } from "grammy";
+import { GrammyError } from "grammy";
+import type { Bot, Context } from "grammy";
 import crypto from "crypto";
 import os from "os";
 

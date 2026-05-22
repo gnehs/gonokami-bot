@@ -31,16 +31,12 @@
    pnpm install
    ```
 
+   需要 Node.js 22.18 以上，因為偶會直接執行 `.ts` 檔。
+
 3. **設定你的秘密鑰匙：** 建一個 `.env` 檔案放你的 Telegram Bot Token。
 
    ```env
    BOT_TOKEN=你的機器人Token
-   ```
-
-4. **（選擇）編譯 TypeScript：** 若要跑純 JS production 版本，先執行
-
-   ```bash
-   pnpm run build   # 會把檔案丟到 dist/
    ```
 
 ---
@@ -63,7 +59,7 @@ pnpm dev
 
 覺得上面的方法很遜？哼嗯，偶也懂 Docker，怕的是他。
 
-1.  **把偶打包起來（multi-stage build 會自動編譯 TypeScript）:**
+1.  **把偶打包起來（新版 Node 會直接執行 TypeScript）:**
 
     ```bash
     docker build -t gonokami-bot .
@@ -89,9 +85,8 @@ docker run -d --name gonokami-bot \
 
 _Zzz ～怕的是他～ Zzz ～_
 
-## 🏭 建構 production 版
+## 🏭 Production 啟動
 
 ```bash
-pnpm run build
-node dist/bot.js
+NODE_ENV=production pnpm start
 ```
