@@ -1,35 +1,37 @@
 import "dotenv/config";
-import { Bot, Context } from "grammy";
+import { Bot } from "grammy";
+import type { Context } from "grammy";
 import {
   safeReply,
   safeSendMessage,
   safeEditMessageText,
   hash,
   pickRandom,
-} from "./utils/telegram.js";
-import JsonFileDb from "./utils/db.js";
-import { updatePollData } from "./utils/poll.js";
-import { registerVoteCommands } from "./commands/vote.js";
+} from "./utils/telegram.ts";
+import JsonFileDb from "./utils/db.ts";
+import { updatePollData } from "./utils/poll.ts";
+import { registerVoteCommands } from "./commands/vote.ts";
 import fs from "fs";
 import { generateText, stepCountIs } from "ai";
-import { getCurrentNumber } from "./utils/number.js";
+import { getCurrentNumber } from "./utils/number.ts";
 import {
-  Subscription,
   addSubscription,
   removeSubscription,
   findSubscription,
   getAll as getAllSubscriptions,
   saveAll as saveSubscriptions,
-} from "./utils/subscription.js";
+} from "./utils/subscription.ts";
+import type { Subscription } from "./utils/subscription.ts";
 import {
   addSticker,
   getRandomSticker,
   getStickersByEmoji,
   getPopularStickers,
   getStickerStats,
-} from "./utils/sticker.js";
+} from "./utils/sticker.ts";
 import { z } from "zod";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { getPredictionText, predictTime } from "./utils/predict/predict.ts";
 
 const gateway = createOpenRouter({
   apiKey: process.env.OPENWEBUI_API_KEY,
@@ -297,6 +299,52 @@ function getUserDisplayName(user?: {
   return "User";
 }
 
+async function appendPredictionText(
+  responseText: string,
+  currentNumber: number,
+  targetNumber: number
+): Promise<string> {
+  const predictionText = await getPredictionText(currentNumber, targetNumber);
+  if (!predictionText) return responseText;
+  return `${responseText}\n🕒 ${predictionText}`;
+}
+
+function queueCancelMarkup(userId: number) {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "🚫 取消叫號通知",
+          callback_data: `cancelnumber_${hash(userId)}`,
+        },
+      ],
+    ],
+  };
+}
+
+async function clearSubscriptionButton(chatId: number, messageId: number) {
+  try {
+    await bot.api.editMessageReplyMarkup(chatId, messageId, {
+      reply_markup: undefined,
+    });
+  } catch (error: any) {
+    if (!error?.description?.includes("message is not modified")) {
+      console.error("Failed to clear subscription button:", error);
+    }
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function userMention(userId: number, name: string): string {
+  return `<a href="tg://user?id=${userId}">${escapeHtml(name)}</a>`;
+}
+
 bot.command("start", async (ctx) => {
   const payloadStr = ctx.message?.text?.split(" ").slice(1).join(" ") || "";
   logActivity("start", {
@@ -349,54 +397,34 @@ bot.command("start", async (ctx) => {
         );
       }
 
+      const privateReply = await appendPredictionText(
+        `👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
+        currentNumber,
+        targetNumber
+      );
+      await ctx.reply(privateReply, { parse_mode: "Markdown" });
+      const groupMessage = await bot.api.sendMessage(
+        chatId,
+        await appendPredictionText(
+          `✅ ${ctx.from.first_name} 已訂閱 ${targetNumber} 號。`,
+          currentNumber,
+          targetNumber
+        ),
+        {
+          parse_mode: "Markdown",
+          reply_to_message_id: Number(user_message_id),
+          reply_markup: queueCancelMarkup(userId),
+        }
+      );
       addSubscription(
         chatId,
         userId,
         ctx.from.first_name,
         targetNumber,
-        Number(user_message_id)
-      );
-
-      await ctx.reply(
-        `👑 哼嗯，*${targetNumber}* 號是吧？偶記下了，怕的是他。`,
-        { parse_mode: "Markdown" }
-      );
-      await bot.api.sendMessage(
-        chatId,
-        `✅ ${ctx.from.first_name} 已訂閱 ${targetNumber} 號。`,
-        { reply_to_message_id: Number(user_message_id) }
+        groupMessage.message_id
       );
     } else if (action === "unsubscribe") {
-      const userId = ctx.from.id;
-      const chatId = Number(group_chat_id);
-
-      const subscriptions: Subscription[] =
-        (getAllSubscriptions() as Subscription[] | undefined) ?? [];
-      const subIndex = subscriptions.findIndex(
-        (s) => s.chat_id === chatId && s.user_id === userId
-      );
-
-      if (subIndex === -1) {
-        return ctx.reply("🗣️ 你又沒訂閱，是在取消什麼，告老師喔！");
-      }
-
-      const sub = subscriptions[subIndex];
-      removeSubscription(chatId, userId);
-
-      await ctx.reply(
-        `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
-        { parse_mode: "Markdown" }
-      );
-
-      if (group_message_id) {
-        const unsubscribedText = `✅ @${ctx.from.first_name} 已取消 *${sub.target_number}* 號的訂閱了。`;
-        await bot.api.editMessageText(
-          chatId,
-          Number(group_message_id),
-          unsubscribedText,
-          { parse_mode: "Markdown" }
-        );
-      }
+      return ctx.reply("取消叫號通知請按訂閱訊息上的按鈕，醬子。");
     }
   } catch (e) {
     console.error("Failed to handle start command with payload", e);
@@ -430,19 +458,17 @@ bot.command("number", async (ctx) => {
       (getAllSubscriptions() as Subscription[] | undefined) ?? [];
     const existingSub = findSubscription(ctx.chat.id, ctx.from.id);
 
-    if (!targetNumber && existingSub) {
-      removeSubscription(ctx.chat.id, ctx.from.id);
-      return ctx.reply(
-        `🚫 哼嗯，偶幫你取消 *${existingSub.target_number}* 號的訂閱了。醬子。`,
-        { parse_mode: "Markdown" }
-      );
-    }
-
     if (existingSub) {
-      responseText += `\n✅ 你已經訂閱 *${existingSub.target_number}* 號了。想取消？打 \`/number\` 就好，醬子。`;
+      responseText += `\n✅ 你已經訂閱 *${existingSub.target_number}* 號了。`;
+      responseText = await appendPredictionText(
+        responseText,
+        currentNumber,
+        existingSub.target_number
+      );
       return safeReply(ctx, responseText, {
         parse_mode: "Markdown",
         reply_to_message_id: ctx.message.message_id,
+        reply_markup: queueCancelMarkup(ctx.from.id),
       });
     }
 
@@ -457,14 +483,25 @@ bot.command("number", async (ctx) => {
 
     if (isValidNumber) {
       if (numTarget > currentNumber) {
+        responseText += `\n👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。`;
+        responseText = await appendPredictionText(
+          responseText,
+          currentNumber,
+          numTarget
+        );
+        const sentMessage = await safeReply(ctx, responseText, {
+          parse_mode: "Markdown",
+          reply_to_message_id: ctx.message.message_id,
+          reply_markup: queueCancelMarkup(ctx.from.id),
+        });
         addSubscription(
           ctx.chat.id,
           ctx.from.id,
           ctx.from.first_name,
           numTarget,
-          ctx.message.message_id
+          sentMessage.message_id
         );
-        responseText += `\n👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。想取消再打一次 \`/number\` 就好。`;
+        return;
       } else {
         responseText += `\n🤡 這位同學，*${numTarget}* 已經過了，你很奇欸。`;
       }
@@ -482,36 +519,19 @@ bot.command("number", async (ctx) => {
   // Group Chat Logic
   else {
     const existingSub = findSubscription(ctx.chat.id, ctx.from.id);
-    const username = await getBotUsername(ctx);
 
-    if (existingSub) {
+    if (existingSub && !targetNumber) {
       responseText += `\n✅ 你訂閱的 *${existingSub.target_number}* 號偶記下了，怕的是他。叫到再跟你說，安安。`;
-      const sentMessage = await safeReply(ctx, responseText, {
+      responseText = await appendPredictionText(
+        responseText,
+        currentNumber,
+        existingSub.target_number
+      );
+      return safeReply(ctx, responseText, {
         parse_mode: "Markdown",
         reply_to_message_id: ctx.message.message_id,
+        reply_markup: queueCancelMarkup(ctx.from.id),
       });
-
-      const payload = `action=unsubscribe&group_chat_id=${ctx.chat.id}&group_message_id=${sentMessage.message_id}`;
-      const base64Payload = Buffer.from(payload).toString("base64");
-      const url = `https://t.me/${username}?start=${base64Payload}`;
-
-      await ctx.api.editMessageReplyMarkup(
-        ctx.chat.id,
-        sentMessage.message_id,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: "🚫 私訊偶取消",
-                  url,
-                },
-              ],
-            ],
-          },
-        }
-      );
-      return;
     }
 
     const numTargetGrp = Number(targetNumber);
@@ -525,24 +545,31 @@ bot.command("number", async (ctx) => {
 
     if (isValidNumber) {
       if (numTargetGrp > currentNumber) {
-        responseText += `\n🤔 你這 *${numTargetGrp}* 號還沒到，想訂閱就私訊偶，怕的是他。`;
-        const payload = `action=subscribe&target_number=${numTargetGrp}&group_chat_id=${ctx.chat.id}&user_message_id=${ctx.message.message_id}`;
-        const base64Payload = Buffer.from(payload).toString("base64");
-        const url = `https://t.me/${username}?start=${base64Payload}`;
-        return safeReply(ctx, responseText, {
+        if (existingSub) {
+          removeSubscription(ctx.chat.id, ctx.from.id);
+          await clearSubscriptionButton(ctx.chat.id, existingSub.message_id);
+          responseText += `\n🔁 幫你把群組叫號通知從 *${existingSub.target_number}* 改成 *${numTargetGrp}* 號了。叫到會在這裡喊你，怕的是他。`;
+        } else {
+          responseText += `\n🔔 *${numTargetGrp}* 號還沒到，偶會在這個群組叫你，怕的是他。`;
+        }
+        responseText = await appendPredictionText(
+          responseText,
+          currentNumber,
+          numTargetGrp
+        );
+        const sentMessage = await safeReply(ctx, responseText, {
           parse_mode: "Markdown",
           reply_to_message_id: ctx.message.message_id,
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: "🔔 私訊偶訂閱",
-                  url,
-                },
-              ],
-            ],
-          },
+          reply_markup: queueCancelMarkup(ctx.from.id),
         });
+        addSubscription(
+          ctx.chat.id,
+          ctx.from.id,
+          ctx.from.first_name,
+          numTargetGrp,
+          sentMessage.message_id
+        );
+        return;
       } else {
         responseText += `\n🤡 這位同學，*${numTargetGrp}* 已經過了，你很奇欸。`;
       }
@@ -557,6 +584,40 @@ bot.command("number", async (ctx) => {
       reply_to_message_id: ctx.message.message_id,
     });
   }
+});
+
+bot.callbackQuery(/cancelnumber_(.+)/, async (ctx) => {
+  if (ctx.match[1] !== hash(ctx.update.callback_query.from.id)) {
+    return ctx.answerCallbackQuery(
+      "🗣️ 告老師喔，只有訂閱的人才能取消，你很奇欸。"
+    );
+  }
+
+  const message = ctx.update.callback_query.message;
+  if (!message) {
+    return ctx.answerCallbackQuery("訊息不見了，偶也沒轍。");
+  }
+
+  const sub = findSubscription(message.chat.id, ctx.update.callback_query.from.id);
+  if (!sub) {
+    await clearSubscriptionButton(message.chat.id, message.message_id);
+    return ctx.answerCallbackQuery("你已經沒有叫號通知了，醬子。");
+  }
+
+  removeSubscription(message.chat.id, ctx.update.callback_query.from.id);
+  await clearSubscriptionButton(message.chat.id, message.message_id);
+  if (sub.message_id !== message.message_id) {
+    await clearSubscriptionButton(message.chat.id, sub.message_id);
+  }
+  await ctx.answerCallbackQuery("已取消叫號通知。");
+  await safeReply(
+    ctx,
+    `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
+    {
+      parse_mode: "Markdown",
+      reply_to_message_id: message.message_id,
+    }
+  );
 });
 
 async function checkSubscriptions() {
@@ -578,17 +639,20 @@ async function checkSubscriptions() {
   for (const sub of subscriptions) {
     if (currentNumber >= sub.target_number) {
       logActivity("subscription_triggered", { sub });
-      safeSendMessage(
+      const mention = userMention(sub.user_id, sub.first_name);
+      await safeSendMessage(
         bot,
         sub.chat_id,
-        `喂～ 👑 @${sub.first_name} ，你訂的 ${sub.target_number} 號到了，怕的是他。還不快去！`,
+        `喂～ 👑 ${mention} ，你訂的 ${sub.target_number} 號到了，怕的是他。還不快去！`,
         {
+          parse_mode: "HTML",
           reply_to_message_id: sub.message_id,
         }
       );
+      await clearSubscriptionButton(sub.chat_id, sub.message_id);
     } else if (Date.now() - sub.created_at > fiveHours) {
       logActivity("subscription_expired", { sub });
-      safeSendMessage(
+      await safeSendMessage(
         bot,
         sub.chat_id,
         `欸 👋 @${sub.first_name} ，你的 ${sub.target_number} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
@@ -596,6 +660,7 @@ async function checkSubscriptions() {
           reply_to_message_id: sub.message_id,
         }
       );
+      await clearSubscriptionButton(sub.chat_id, sub.message_id);
     } else {
       remainingSubscriptions.push(sub);
     }
@@ -645,22 +710,17 @@ async function summarizeMessages(msgs: { role: string; content: any }[]) {
     return { r: m.role, c: contentText };
   });
 
-  const summaryPrompt: { role: "system" | "user"; content: string }[] = [
-    {
-      role: "system",
-      content:
-        "使用條列式摘要以下對話，100 字左右，摘要將用於後續對話上下文，不要遺漏重要資訊。",
-    },
-    {
-      role: "user",
-      content: JSON.stringify(messagesForSummary),
-    },
-  ];
-
   try {
     const { text } = await generateText({
       model: OPENWEBUI_MODEL,
-      messages: summaryPrompt,
+      system:
+        "使用條列式摘要以下對話，100 字左右，摘要將用於後續對話上下文，不要遺漏重要資訊。",
+      messages: [
+        {
+          role: "user",
+          content: JSON.stringify(messagesForSummary),
+        },
+      ],
       temperature: 0.3,
       maxRetries: 5,
     });
@@ -688,11 +748,8 @@ function getAISTools(ctx: Context) {
         const numbersStr = numbers.join(", ");
         const { text } = await generateText({
           model: OPENWEBUI_MODEL,
+          system: systemPromptTarot,
           messages: [
-            {
-              role: "system",
-              content: systemPromptTarot,
-            },
             {
               role: "assistant",
               content: `已抽選塔羅牌：${numbersStr}`,
@@ -725,6 +782,44 @@ function getAISTools(ctx: Context) {
       execute: async () => {
         const num = await getCurrentNumber();
         return { current_number: num };
+      },
+    },
+    predict_queue_time: {
+      description:
+        "Predict when a target queue number will be called based on the current queue number and historical timing model.",
+      inputSchema: z.object({
+        target_number: z
+          .number()
+          .int()
+          .describe("Target queue number to predict (1001-1200)"),
+      }),
+      execute: async ({ target_number }: { target_number: number }) => {
+        const currentNumber = await getCurrentNumber();
+        if (currentNumber === null) {
+          return { ok: false, reason: "current_number_unavailable" } as const;
+        }
+
+        if (
+          Number.isNaN(target_number) ||
+          !Number.isInteger(target_number) ||
+          target_number < 1001 ||
+          target_number > 1200
+        ) {
+          return { ok: false, reason: "invalid_target_number" } as const;
+        }
+
+        const predictedTime = await predictTime(
+          new Date(),
+          currentNumber,
+          target_number
+        );
+
+        return {
+          ok: true,
+          current_number: currentNumber,
+          target_number,
+          predicted_time: predictedTime.toISOString(),
+        } as const;
       },
     },
     create_vote: {
@@ -881,18 +976,25 @@ function getAISTools(ctx: Context) {
           return { done: false } as const;
         }
 
+        const sentMessage = await safeReply(
+          ctx,
+          await appendPredictionText(
+            `👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。`,
+            currentNumber,
+            numTarget
+          ),
+          {
+            parse_mode: "Markdown",
+            reply_markup: queueCancelMarkup(ctx.from.id),
+          }
+        );
+
         addSubscription(
           ctx.chat.id,
           ctx.from.id,
           ctx.from.first_name,
           numTarget,
-          ctx.message!.message_id
-        );
-
-        await safeReply(
-          ctx,
-          `👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。想取消再跟偶說醬子。`,
-          { parse_mode: "Markdown" }
+          sentMessage.message_id
         );
 
         return `Subscription message sent to user`;
@@ -900,7 +1002,7 @@ function getAISTools(ctx: Context) {
     },
     unsubscribe_number: {
       description:
-        "Cancel current user's queue number subscription. Only available in private chat.",
+        "Show a message button for the current user to cancel their queue number subscription. Only available in private chat.",
       inputSchema: z.object({}),
       execute: async () => {
         if (ctx.chat.type !== "private") {
@@ -923,14 +1025,15 @@ function getAISTools(ctx: Context) {
         }
 
         const sub = subscriptions[subIndex];
-        removeSubscription(ctx.chat.id, ctx.from.id);
-
         await safeReply(
           ctx,
-          `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
-          { parse_mode: "Markdown" }
+          `✅ 你現在訂閱 *${sub.target_number}* 號。`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: queueCancelMarkup(ctx.from.id),
+          }
         );
-        return `Unsubscription message sent to user`;
+        return `Cancellation button sent to user`;
       },
     },
     send_sticker: {
@@ -1285,12 +1388,10 @@ async function processLLMMessage(ctx: Context, userContent: string) {
           .join("\n")}`
       : "";
 
-  // 構建訊息陣列，包含系統訊息和歷史訊息
+  const systemInstruction = systemPrompt + memoryContext;
+
+  // 構建訊息陣列，包含歷史訊息和目前使用者資訊
   const allMessages = [
-    {
-      role: "system",
-      content: systemPrompt + memoryContext,
-    },
     ...history.messages.filter(
       (msg) => msg.role === "assistant" || msg.role === "user"
     ),
@@ -1302,8 +1403,8 @@ async function processLLMMessage(ctx: Context, userContent: string) {
 
   // 簡化訊息處理：移除所有工具調用相關訊息，只保留純文字對話
   const messagesForModel = allMessages.filter((msg) => {
-    // 只保留 system、user、assistant 的純文字訊息
-    if (msg.role === "system" || msg.role === "user") {
+    // 只保留 user、assistant 的純文字訊息；system prompt 透過 generateText 的 system option 傳入
+    if (msg.role === "user") {
       return true;
     }
     if (msg.role === "assistant") {
@@ -1324,6 +1425,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       // 使用 AI SDK 正確的工具調用處理方式
       const result = await generateText({
         model: OPENWEBUI_MODEL,
+        system: systemInstruction,
         messages: messagesForModel,
         tools: tools as any,
         maxRetries: 5,

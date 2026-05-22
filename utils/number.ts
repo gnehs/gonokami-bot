@@ -3,6 +3,21 @@ let numberCache: { value: number | null; timestamp: number } = {
   timestamp: 0,
 };
 
+function parseQueueNumber(value: unknown): number | null {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+      ? Number(value.trim())
+      : NaN;
+
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return null;
+  }
+
+  return parsed;
+}
+
 /**
  * Retrieve the latest calling number from the remote endpoint.
  * The result is cached for 1 minute to reduce network traffic.
@@ -24,7 +39,13 @@ export async function getCurrentNumber(): Promise<number | null> {
       return null;
     }
 
-    const currentNumber = JSON.parse(res[0].detail_json).selections["目前號碼"];
+    const currentNumber = parseQueueNumber(
+      JSON.parse(res[0].detail_json).selections["目前號碼"]
+    );
+    if (currentNumber === null) {
+      return null;
+    }
+
     numberCache = {
       value: currentNumber,
       timestamp: now,
