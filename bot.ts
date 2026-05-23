@@ -26,16 +26,22 @@ import {
   addSticker,
   getRandomSticker,
   getStickersByEmoji,
+  getStickersByMood,
   getPopularStickers,
   getStickerStats,
+  incrementStickerUsage,
 } from "./utils/sticker.ts";
+import {
+  searchMemoryRecords,
+  selectMemoryContext,
+} from "./utils/memory.ts";
 import { z } from "zod";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { getPredictionText, predictTime } from "./utils/predict/predict.ts";
 
 const gateway = createOpenRouter({
-  apiKey: process.env.OPENWEBUI_API_KEY,
-  baseURL: process.env.OPENWEBUI_BASE_URL,
+  apiKey: process.env.OPENROUTER_API_KEY || process.env.OPENWEBUI_API_KEY,
+  baseURL: process.env.OPENROUTER_BASE_URL || process.env.OPENWEBUI_BASE_URL,
 });
 
 // ----------------- System prompt for AI generation -----------------
@@ -60,9 +66,61 @@ async function getBotUsername(ctx: Context) {
 
 const bot = new Bot(process.env.BOT_TOKEN!);
 
+const ADMIN_TELEGRAM_IDS = (
+  process.env.ADMIN_TELEGRAM_IDS ||
+  process.env.ADMIN_TELEGRAM_ID ||
+  "215616188"
+)
+  .split(",")
+  .map((id) => Number(id.trim()))
+  .filter((id) => Number.isFinite(id));
+
+const alertState = new Map<string, { count: number; lastSentAt: number }>();
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
+}
+
+async function notifyAdmins(
+  key: string,
+  message: string,
+  error?: unknown
+): Promise<void> {
+  if (ADMIN_TELEGRAM_IDS.length === 0) return;
+
+  const now = Date.now();
+  const state = alertState.get(key) || { count: 0, lastSentAt: 0 };
+  state.count += 1;
+
+  const shouldSend = state.count === 1 || now - state.lastSentAt > 10 * 60_000;
+  alertState.set(key, state);
+  if (!shouldSend) return;
+
+  state.lastSentAt = now;
+  const text = [
+    "🚨 gonokami-bot alert",
+    `key: ${key}`,
+    `count: ${state.count}`,
+    message,
+    error ? `error: ${formatError(error)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  for (const adminId of ADMIN_TELEGRAM_IDS) {
+    try {
+      await bot.api.sendMessage(adminId, text);
+    } catch (sendError) {
+      console.error("[Admin Alert Error]", sendError);
+    }
+  }
+}
+
 // Global error handler – prevent crashes
 bot.catch((err) => {
   console.error("[Bot Error]", err);
+  void notifyAdmins("bot.catch", "Telegram update handling failed.", err);
 });
 
 // salt moved to utils/telegram.js
@@ -205,8 +263,10 @@ function getLimitMessage(): string {
 // pickRandom moved to utils/telegram.js
 // ---------------------------------------------
 
-const OPENWEBUI_MODEL = gateway(
-  process.env.OPENWEBUI_MODEL || "openai/gpt-oss-20b"
+const OPENROUTER_MODEL = gateway(
+  process.env.OPENROUTER_MODEL ||
+    process.env.OPENWEBUI_MODEL ||
+    "openai/gpt-oss-20b"
 );
 
 // ----------------- Chat Memory -----------------
@@ -220,9 +280,11 @@ interface Memory {
   id: string;
   content: string;
   createdAt: Date;
+  updatedAt?: Date;
   userName?: string; // 記錄是誰說的
   userId?: number; // 使用者ID
   chatId: number; // 聊天室ID
+  scope?: "personal" | "group";
 }
 
 const chatHistories = new Map<number, ChatHistory>();
@@ -630,6 +692,10 @@ async function checkSubscriptions() {
   const currentNumber = await getCurrentNumber();
   if (currentNumber === null) {
     console.error("checkSubscriptions: Failed to get current number.");
+    void notifyAdmins(
+      "number.fetch",
+      "Failed to fetch current queue number during subscription check."
+    );
     return;
   }
 
@@ -640,27 +706,45 @@ async function checkSubscriptions() {
     if (currentNumber >= sub.target_number) {
       logActivity("subscription_triggered", { sub });
       const mention = userMention(sub.user_id, sub.first_name);
-      await safeSendMessage(
-        bot,
-        sub.chat_id,
-        `喂～ 👑 ${mention} ，你訂的 ${sub.target_number} 號到了，怕的是他。還不快去！`,
-        {
-          parse_mode: "HTML",
-          reply_to_message_id: sub.message_id,
-        }
-      );
-      await clearSubscriptionButton(sub.chat_id, sub.message_id);
+      try {
+        await safeSendMessage(
+          bot,
+          sub.chat_id,
+          `喂～ 👑 ${mention} ，你訂的 ${sub.target_number} 號到了，怕的是他。還不快去！`,
+          {
+            parse_mode: "HTML",
+            reply_to_message_id: sub.message_id,
+          }
+        );
+        await clearSubscriptionButton(sub.chat_id, sub.message_id);
+      } catch (error) {
+        console.error("Failed to send subscription notification:", error);
+        void notifyAdmins(
+          "subscription.notify",
+          `Failed to notify ${sub.user_id} for ${sub.target_number}.`,
+          error
+        );
+      }
     } else if (Date.now() - sub.created_at > fiveHours) {
       logActivity("subscription_expired", { sub });
-      await safeSendMessage(
-        bot,
-        sub.chat_id,
-        `欸 👋 @${sub.first_name} ，你的 ${sub.target_number} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
-        {
-          reply_to_message_id: sub.message_id,
-        }
-      );
-      await clearSubscriptionButton(sub.chat_id, sub.message_id);
+      try {
+        await safeSendMessage(
+          bot,
+          sub.chat_id,
+          `欸 👋 @${sub.first_name} ，你的 ${sub.target_number} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
+          {
+            reply_to_message_id: sub.message_id,
+          }
+        );
+        await clearSubscriptionButton(sub.chat_id, sub.message_id);
+      } catch (error) {
+        console.error("Failed to send subscription expiration:", error);
+        void notifyAdmins(
+          "subscription.expire",
+          `Failed to notify expiration for ${sub.user_id} / ${sub.target_number}.`,
+          error
+        );
+      }
     } else {
       remainingSubscriptions.push(sub);
     }
@@ -712,7 +796,7 @@ async function summarizeMessages(msgs: { role: string; content: any }[]) {
 
   try {
     const { text } = await generateText({
-      model: OPENWEBUI_MODEL,
+      model: OPENROUTER_MODEL,
       system:
         "使用條列式摘要以下對話，100 字左右，摘要將用於後續對話上下文，不要遺漏重要資訊。",
       messages: [
@@ -747,7 +831,7 @@ function getAISTools(ctx: Context) {
         const numbers = Array.from(picks);
         const numbersStr = numbers.join(", ");
         const { text } = await generateText({
-          model: OPENWEBUI_MODEL,
+          model: OPENROUTER_MODEL,
           system: systemPromptTarot,
           messages: [
             {
@@ -919,7 +1003,7 @@ function getAISTools(ctx: Context) {
     },
     subscribe_number: {
       description:
-        "Subscribe to a queue number notification. Only available in private chat.",
+        "Subscribe the current user to a queue number notification in the current chat. In group chats, each user has their own subscription keyed by chat and user.",
       inputSchema: z.object({
         target_number: z
           .number()
@@ -927,14 +1011,6 @@ function getAISTools(ctx: Context) {
           .describe("Target queue number to subscribe (1001-1200)"),
       }),
       execute: async ({ target_number }: { target_number: number }) => {
-        if (ctx.chat.type !== "private") {
-          await safeReply(
-            ctx,
-            "🗣️ 告老師喔！在群組不能直接訂閱，請私訊偶醬子才行。"
-          );
-          return { done: false } as const;
-        }
-
         const currentNumber = await getCurrentNumber();
         if (currentNumber === null) {
           await safeReply(ctx, "挖哩咧 😵‍💫，偶拿不到號碼，很遜欸。");
@@ -964,22 +1040,25 @@ function getAISTools(ctx: Context) {
           return { done: false } as const;
         }
 
-        const subscriptions: Subscription[] =
-          (getAllSubscriptions() as Subscription[] | undefined) ?? [];
         const existingSub = findSubscription(ctx.chat.id, ctx.from.id);
         if (existingSub) {
-          await safeReply(
-            ctx,
-            `⚠️ 你已經訂閱 *${existingSub.target_number}* 號了，不要重複訂，很遜。`,
-            { parse_mode: "Markdown" }
-          );
-          return { done: false } as const;
+          removeSubscription(ctx.chat.id, ctx.from.id);
+          await clearSubscriptionButton(ctx.chat.id, existingSub.message_id);
         }
+
+        const subscriptionText =
+          existingSub && ctx.chat.type !== "private"
+            ? `🔁 幫你把群組叫號通知從 *${existingSub.target_number}* 改成 *${numTarget}* 號了。叫到會在這裡喊你，怕的是他。`
+            : existingSub
+              ? `🔁 幫你把叫號通知從 *${existingSub.target_number}* 改成 *${numTarget}* 號了。叫到再跟你說，怕的是他。`
+              : ctx.chat.type !== "private"
+                ? `🔔 *${numTarget}* 號還沒到，偶會在這個群組叫你，怕的是他。`
+                : `👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。`;
 
         const sentMessage = await safeReply(
           ctx,
           await appendPredictionText(
-            `👑 哼嗯，*${numTarget}* 號是吧？偶記下了，怕的是他。`,
+            subscriptionText,
             currentNumber,
             numTarget
           ),
@@ -997,48 +1076,35 @@ function getAISTools(ctx: Context) {
           sentMessage.message_id
         );
 
-        return `Subscription message sent to user`;
+        return `Subscription message sent to current chat`;
       },
     },
     unsubscribe_number: {
       description:
-        "Show a message button for the current user to cancel their queue number subscription. Only available in private chat.",
+        "Cancel the current user's queue number subscription in the current chat. In group chats, only the caller's own subscription is cancelled.",
       inputSchema: z.object({}),
       execute: async () => {
-        if (ctx.chat.type !== "private") {
-          await safeReply(
-            ctx,
-            "🗣️ 告老師喔！在群組不能直接取消訂閱，請私訊偶醬子才行。"
-          );
-          return { done: false } as const;
-        }
-
-        const subscriptions: Subscription[] =
-          (getAllSubscriptions() as Subscription[] | undefined) ?? [];
-        const subIndex = subscriptions.findIndex(
-          (s) => s.chat_id === ctx.chat.id && s.user_id === ctx.from.id
-        );
-
-        if (subIndex === -1) {
+        const sub = findSubscription(ctx.chat.id, ctx.from.id);
+        if (!sub) {
           await safeReply(ctx, "🗣️ 你又沒訂閱，是在取消什麼，告老師喔！");
           return { done: false } as const;
         }
 
-        const sub = subscriptions[subIndex];
+        removeSubscription(ctx.chat.id, ctx.from.id);
+        await clearSubscriptionButton(ctx.chat.id, sub.message_id);
         await safeReply(
           ctx,
-          `✅ 你現在訂閱 *${sub.target_number}* 號。`,
+          `🚫 哼嗯，偶幫你取消 *${sub.target_number}* 號的訂閱了。醬子。`,
           {
             parse_mode: "Markdown",
-            reply_markup: queueCancelMarkup(ctx.from.id),
           }
         );
-        return `Cancellation button sent to user`;
+        return `Subscription cancelled in current chat`;
       },
     },
     send_sticker: {
       description:
-        "發送貼圖回應，根據指定的 emoji 來選擇合適的貼圖。如果找不到對應的貼圖，會發送隨機貼圖。",
+        "發送貼圖回應，可根據 emoji 或 mood/語意情緒選擇合適貼圖；找不到時會發送隨機貼圖。",
       inputSchema: z.object({
         emoji: z
           .string()
@@ -1046,50 +1112,57 @@ function getAISTools(ctx: Context) {
           .describe(
             "想要發送的貼圖 emoji，例如：😀、❤️、👍 等。如果未提供則發送隨機貼圖。"
           ),
+        mood: z
+          .string()
+          .optional()
+          .describe("想要的語意情緒，例如：尷尬、笑死、生氣、可憐、睏、震驚。"),
       }),
-      execute: async ({ emoji }: { emoji?: string }) => {
+      execute: async ({ emoji, mood }: { emoji?: string; mood?: string }) => {
         try {
-          // 處理未傳遞 emoji 的情況
-          if (!emoji) {
+          const sendSticker = async (sticker: { id: string }) => {
+            await ctx.api.sendSticker(ctx.chat.id, sticker.id, {
+              reply_to_message_id: ctx.message!.message_id,
+            });
+            incrementStickerUsage(sticker.id);
+          };
+
+          if (!emoji && !mood) {
             const randomSticker = getRandomSticker();
             if (randomSticker) {
-              await ctx.api.sendSticker(ctx.chat.id, randomSticker.id, {
-                reply_to_message_id: ctx.message!.message_id,
-              });
+              await sendSticker(randomSticker);
               return `發送了隨機貼圖 ${randomSticker.emoji || "🤔"}`;
             } else {
               return `偶還沒有收藏任何貼圖，無法發送貼圖 😅`;
             }
           }
 
-          // 先嘗試根據 emoji 找貼圖
-          let stickers = getStickersByEmoji(emoji);
+          const stickers = mood?.trim()
+            ? getStickersByMood(mood)
+            : emoji?.trim()
+              ? getStickersByEmoji(emoji)
+              : [];
 
-          // 如果找不到對應的 emoji 貼圖，就發送隨機貼圖
           if (stickers.length === 0) {
             const randomSticker = getRandomSticker();
             if (randomSticker) {
-              await ctx.api.sendSticker(ctx.chat.id, randomSticker.id, {
-                reply_to_message_id: ctx.message!.message_id,
-              });
+              await sendSticker(randomSticker);
+              const label = mood || emoji;
               return `發送了隨機貼圖 ${
                 randomSticker.emoji || "🤔"
-              }（找不到 ${emoji} 的貼圖）`;
+              }（找不到 ${label} 的貼圖）`;
             } else {
-              return `偶還沒有收藏任何貼圖，無法發送 ${emoji} 貼圖 😅`;
+              return `偶還沒有收藏任何貼圖，無法發送 ${mood || emoji} 貼圖 😅`;
             }
           }
 
-          // 從符合的貼圖中隨機選一個
           const selectedSticker =
             stickers[Math.floor(Math.random() * stickers.length)];
-          await ctx.api.sendSticker(ctx.chat.id, selectedSticker.id, {
-            reply_to_message_id: ctx.message!.message_id,
-          });
+          await sendSticker(selectedSticker);
 
-          return `發送了 ${emoji} 貼圖！`;
+          return `發送了 ${mood || emoji} 貼圖！`;
         } catch (error) {
           console.error("發送貼圖時發生錯誤:", error);
+          void notifyAdmins("send_sticker", "Sticker tool failed.", error);
           return `發送貼圖失敗，偶很遜 😔`;
         }
       },
@@ -1126,32 +1199,52 @@ function getAISTools(ctx: Context) {
     },
     remember_information: {
       description:
-        "記住重要的資訊，用於長期記憶。適用於記住使用者的偏好、重要事件、個人資訊等",
+        "記住重要資訊。預設是個人記憶；若資訊屬於整個群組或所有人，scope 設為 group。",
       inputSchema: z.object({
         content: z.string().describe("要記住的內容"),
+        scope: z
+          .enum(["personal", "group"])
+          .optional()
+          .describe("personal 是目前使用者的私人記憶，group 是聊天室共享記憶。"),
       }),
-      execute: async ({ content }: { content: string }) => {
+      execute: async ({
+        content,
+        scope,
+      }: {
+        content: string;
+        scope?: "personal" | "group";
+      }) => {
         try {
           const userName = ctx.from?.first_name || "Unknown";
           const userId = ctx.from?.id;
-          addMemory(ctx.chat.id, content, userName, userId);
-          return `✅ 偶記住了：${content}`;
+          const memory = addMemory(
+            ctx.chat.id,
+            content,
+            userName,
+            userId,
+            scope || "personal"
+          );
+          return `✅ 偶記住了（${memory.scope === "group" ? "群組" : "個人"}）：${content}`;
         } catch (error) {
           return `❌ 記憶儲存失敗：${error}`;
         }
       },
     },
     search_memories: {
-      description: "搜尋你之前記住的資訊（只能搜尋自己的記憶）",
+      description: "搜尋個人與群組共享記憶，可用 query 關鍵字篩選。",
       inputSchema: z.object({
         query: z
           .string()
           .optional()
-          .describe("搜尋關鍵字，不提供則顯示你的所有記憶"),
+          .describe("搜尋關鍵字，不提供則顯示最近的個人與群組記憶"),
       }),
       execute: async ({ query }: { query?: string }) => {
-        // 安全措施：只能搜尋自己的記憶
-        const memories = searchMemories(ctx.chat.id);
+        const memories = searchMemories(ctx.chat.id, {
+          query,
+          userId: ctx.from?.id,
+          includeGroup: true,
+          limit: 15,
+        });
 
         if (memories.length === 0) {
           return query
@@ -1159,10 +1252,10 @@ function getAISTools(ctx: Context) {
             : "🤔 偶還沒有你的任何記憶欸";
         }
 
-        let result = `🧠 *找到 ${memories.length} 個你的記憶*\n\n`;
-        memories.slice(0, 15).forEach((memory, index) => {
+        let result = `🧠 *找到 ${memories.length} 個相關記憶*\n\n`;
+        memories.forEach((memory, index) => {
           const date = new Date(memory.createdAt).toLocaleDateString();
-          result += `${index + 1}. ${memory.content}\n`;
+          result += `${index + 1}. [${memory.scope === "group" ? "群組" : "個人"}] ${memory.content}\n`;
           result += `   📅 ${date}`;
           if (memory.userName) {
             result += ` | 👤 ${memory.userName}`;
@@ -1184,12 +1277,14 @@ function getAISTools(ctx: Context) {
           return "❌ 找不到聊天記錄";
         }
 
-        // 安全措施：尋找符合後6碼且屬於目前使用者的記憶
+        // 個人記憶只有本人能刪；群組共享記憶允許同聊天室使用者刪除。
         const fullMemory = history.memories.find(
-          (m) => m.id.endsWith(memoryId) && m.userId === ctx.from?.id
+          (m) =>
+            m.id.endsWith(memoryId) &&
+            (m.scope === "group" || m.userId === ctx.from?.id)
         );
         if (!fullMemory) {
-          return "❌ 找不到該記憶，或你沒有權限刪除（只能刪除自己的記憶）";
+          return "❌ 找不到該記憶，或你沒有權限刪除";
         }
 
         const success = deleteMemory(ctx.chat.id, fullMemory.id);
@@ -1251,7 +1346,8 @@ function addMemory(
   chatId: number,
   content: string,
   userName?: string,
-  userId?: number
+  userId?: number,
+  scope: "personal" | "group" = "personal"
 ): Memory {
   const history = chatHistories.get(chatId);
   if (!history) {
@@ -1265,6 +1361,7 @@ function addMemory(
     userName,
     userId,
     chatId,
+    scope,
   };
 
   // 限制記憶最多一百條，超過時移除最舊的
@@ -1281,13 +1378,39 @@ function addMemory(
   return memory;
 }
 
-function searchMemories(chatId: number): Memory[] {
+function searchMemories(
+  chatId: number,
+  options: {
+    query?: string;
+    userId?: number;
+    includeGroup?: boolean;
+    limit?: number;
+  } = {}
+): Memory[] {
   const history = chatHistories.get(chatId);
   if (!history) {
     return [];
   }
 
-  return history.memories;
+  return searchMemoryRecords(history.memories, options) as Memory[];
+}
+
+function getMemoryContextMemories(
+  chatId: number,
+  query: string,
+  userId?: number
+): Memory[] {
+  const history = chatHistories.get(chatId);
+  if (!history) {
+    return [];
+  }
+
+  return selectMemoryContext(history.memories, {
+    query,
+    userId,
+    includeGroup: true,
+    limit: 5,
+  }) as Memory[];
 }
 
 function deleteMemory(chatId: number, memoryId: string): boolean {
@@ -1378,13 +1501,19 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     });
   }
 
-  // 獲取相關的記憶並添加到上下文（限制為聊天室內的記憶）
-  const recentMemories = searchMemories(chatId);
+  // 獲取目前訊息相關的個人與群組共享記憶。
+  const recentMemories = getMemoryContextMemories(
+    chatId,
+    userContent,
+    ctx.from?.id
+  );
   const memoryContext =
     recentMemories.length > 0
       ? `\n\n相關記憶：\n${recentMemories
-          .slice(0, 5)
-          .map((m) => `- ${m.content} (${m.userName || "Unknown"})`)
+          .map(
+            (m) =>
+              `- [${m.scope === "group" ? "群組" : "個人"}] ${m.content} (${m.userName || "Unknown"})`
+          )
           .join("\n")}`
       : "";
 
@@ -1424,7 +1553,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     try {
       // 使用 AI SDK 正確的工具調用處理方式
       const result = await generateText({
-        model: OPENWEBUI_MODEL,
+        model: OPENROUTER_MODEL,
         system: systemInstruction,
         messages: messagesForModel,
         tools: tools as any,
@@ -1445,14 +1574,21 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       responseMessages = response.messages || [];
     } catch (e) {
       console.error("LLM generation failed", e);
+      void notifyAdmins("llm.generate", "LLM generation failed.", e);
       // 嘗試發送隨機貼圖，如果沒有貼圖就發送文字
       const randomSticker = getRandomSticker();
       if (randomSticker) {
         try {
           await ctx.api.sendSticker(ctx.chat.id, randomSticker.id);
+          incrementStickerUsage(randomSticker.id);
           return; // 成功發送貼圖後直接返回
         } catch (stickerError) {
           console.error("發送隨機貼圖失敗:", stickerError);
+          void notifyAdmins(
+            "llm.fallback_sticker",
+            "Fallback sticker failed after LLM failure.",
+            stickerError
+          );
           text = "挖哩咧，偶詞窮惹";
         }
       } else {
@@ -1466,7 +1602,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
       const toolUsageSummary = summarizeToolUsage(responseMessages);
       if (toolUsageSummary) {
         history.messages.push({
-          role: "system",
+          role: "assistant",
           content: toolUsageSummary,
           id: `tool-summary-${Date.now()}`,
           createdAt: new Date(),
@@ -1504,6 +1640,7 @@ async function processLLMMessage(ctx: Context, userContent: string) {
     }
   } catch (e) {
     console.error("chat generate error", e);
+    void notifyAdmins("chat.generate", "Chat generation failed.", e);
     const fallback = "挖哩咧，偶詞窮惹。";
     history.messages.push({
       role: "assistant",

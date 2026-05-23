@@ -33,10 +33,16 @@
 
    需要 Node.js 22.18 以上，因為偶會直接執行 `.ts` 檔。
 
-3. **設定你的秘密鑰匙：** 建一個 `.env` 檔案放你的 Telegram Bot Token。
+3. **設定你的秘密鑰匙：** 建一個 `.env` 檔案放你的 Telegram Bot Token。AI 對話使用 OpenRouter；舊的 `OPENWEBUI_*` 變數仍會相容讀取，但新部署請用 `OPENROUTER_*`。
 
    ```env
    BOT_TOKEN=你的機器人Token
+   OPENROUTER_API_KEY=你的OpenRouter金鑰
+   OPENROUTER_MODEL=openai/gpt-oss-20b
+   # 可選：自訂 OpenRouter-compatible endpoint
+   # OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+   # 可選：錯誤告警收件人，逗號分隔；預設 215616188
+   # ADMIN_TELEGRAM_IDS=215616188
    ```
 
 ---

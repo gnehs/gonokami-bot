@@ -9,6 +9,7 @@ export interface StickerData {
   chatId: number; // 聊天室 ID
   addedAt: string; // 新增時間
   usageCount: number; // 使用次數
+  moodTags?: string[]; // 語意標籤，維持全域貼圖池但讓 AI 更會挑
 }
 
 const STICKERS_FILE = "./data/stickers.json";
@@ -44,6 +45,75 @@ function writeStickers(stickers: StickerData[]): boolean {
   }
 }
 
+const MOOD_KEYWORDS: Record<string, string[]> = {
+  happy: ["happy", "開心", "高興", "爽", "讚", "好耶", "慶祝", "kira"],
+  laugh: ["laugh", "lol", "笑", "笑死", "好笑", "哈哈", "www", "xdddd"],
+  awkward: ["awkward", "尷尬", "尬", "乾", "呃", "無言"],
+  angry: ["angry", "生氣", "氣", "怒", "森七七", "不爽", "火大"],
+  sad: ["sad", "難過", "哭", "可憐", "委屈", "emo"],
+  sleepy: ["sleepy", "睡", "睏", "累", "蓋被被", "zzz"],
+  shocked: ["shocked", "震驚", "驚", "挖賽", "蛤", "怕"],
+  love: ["love", "愛", "喜歡", "心", "可愛"],
+  confused: ["confused", "困惑", "問號", "蛤", "不懂", "奇"],
+};
+
+const EMOJI_MOOD_HINTS: Record<string, string[]> = {
+  "😀": ["happy"],
+  "😄": ["happy", "laugh"],
+  "😂": ["laugh"],
+  "🤣": ["laugh"],
+  "😅": ["awkward", "laugh"],
+  "🙂": ["awkward"],
+  "😡": ["angry"],
+  "😠": ["angry"],
+  "😭": ["sad"],
+  "😢": ["sad"],
+  "😴": ["sleepy"],
+  "😪": ["sleepy"],
+  "😱": ["shocked"],
+  "😮": ["shocked"],
+  "❤️": ["love"],
+  "💕": ["love"],
+  "🤔": ["confused"],
+  "❓": ["confused"],
+};
+
+function normalizeTag(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function inferMoodTags(emoji?: string, setName?: string): string[] {
+  const tags = new Set<string>();
+  if (emoji && EMOJI_MOOD_HINTS[emoji]) {
+    EMOJI_MOOD_HINTS[emoji].forEach((tag) => tags.add(tag));
+  }
+
+  const text = normalizeTag([emoji, setName].filter(Boolean).join(" "));
+  for (const [tag, keywords] of Object.entries(MOOD_KEYWORDS)) {
+    if (keywords.some((keyword) => text.includes(normalizeTag(keyword)))) {
+      tags.add(tag);
+    }
+  }
+  return Array.from(tags);
+}
+
+export function normalizeMoodQuery(query?: string): string[] {
+  const normalized = normalizeTag(query || "");
+  if (!normalized) return [];
+
+  const tags = new Set<string>();
+  for (const [tag, keywords] of Object.entries(MOOD_KEYWORDS)) {
+    if (
+      tag.includes(normalized) ||
+      keywords.some((keyword) => normalized.includes(normalizeTag(keyword)))
+    ) {
+      tags.add(tag);
+    }
+  }
+  if (tags.size === 0) tags.add(normalized);
+  return Array.from(tags);
+}
+
 /**
  * 新增貼圖到資料庫
  */
@@ -77,6 +147,7 @@ export function addSticker(
       chatId,
       addedAt: new Date().toISOString(),
       usageCount: 1,
+      moodTags: inferMoodTags(emoji, setName),
     };
 
     stickers.push(newSticker);
@@ -126,6 +197,39 @@ export function getStickersByEmoji(emoji: string): StickerData[] {
   } catch (error) {
     console.error("搜尋貼圖時發生錯誤:", error);
     return [];
+  }
+}
+
+export function getStickersByMood(mood: string): StickerData[] {
+  try {
+    const stickers = readStickers();
+    const tags = normalizeMoodQuery(mood);
+    if (tags.length === 0) return [];
+
+    return stickers.filter((sticker) => {
+      const stickerTags = new Set([
+        ...(sticker.moodTags || []),
+        ...inferMoodTags(sticker.emoji, sticker.setName),
+      ]);
+      return tags.some((tag) => stickerTags.has(tag));
+    });
+  } catch (error) {
+    console.error("搜尋語意貼圖時發生錯誤:", error);
+    return [];
+  }
+}
+
+export function incrementStickerUsage(stickerId: string): boolean {
+  try {
+    const stickers = readStickers();
+    const sticker = stickers.find((s) => s.id === stickerId);
+    if (!sticker) return false;
+    sticker.usageCount++;
+    writeStickers(stickers);
+    return true;
+  } catch (error) {
+    console.error("更新貼圖使用次數時發生錯誤:", error);
+    return false;
   }
 }
 
