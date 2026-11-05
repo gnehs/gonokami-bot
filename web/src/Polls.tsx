@@ -63,7 +63,7 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
     return () => observer.disconnect();
   }, [canMore, page.nextBefore, load]);
 
-  const greeting = <Greeting name={userName} openCount={page.polls.length > 0 ? page.polls.filter((p) => !p.isClosed).length : null} />;
+  const greeting = <Greeting name={userName} />;
   if (page.error && page.polls.length === 0) return <>{greeting}<ErrorView error={page.error} onRetry={() => load()} /></>;
   if (page.loading && page.polls.length === 0) return <>{greeting}<Spinner /></>;
   if (page.polls.length === 0) {
@@ -112,21 +112,15 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
 }
 
 /** `openCount` is null until the first page arrives, so the right side never shows a guess. */
-function Greeting({ name, openCount }: { name: string; openCount: number | null }) {
+function Greeting({ name }: { name: string }) {
   const firstName = name.trim().split(/\s+/)[0] || name;
   return (
     <Group className="mt-2 flex min-h-[80px] items-center gap-3 px-4 py-3">
       <Bear pose="hello" size={52} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[19px] font-bold leading-snug">嗨 {firstName}</p>
-        <p className="mt-0.5 truncate text-[15px] text-hint">{openCount ? "有團在揪，怕的是你沒跟到" : "醬子冷冷的，揪個拉麵吧"}</p>
+        <p className="mt-0.5 truncate text-[15px] text-hint">今天要ㄘ什麼？怕的是他</p>
       </div>
-      {openCount !== null && (
-        <div className="shrink-0 text-right">
-          <p className={`num text-[22px] font-bold leading-tight ${openCount ? "text-up" : ""}`}>{openCount}</p>
-          <p className="text-[13px] text-hint">進行中</p>
-        </div>
-      )}
     </Group>
   );
 }
