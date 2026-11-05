@@ -89,7 +89,13 @@ function Shell({ me }: { me: MeResult }) {
         className="fixed inset-x-0 bottom-0 z-20 px-3"
         style={{ paddingBottom: "calc(var(--safe-bottom) + 0.5rem)", paddingLeft: "calc(var(--safe-left) + 0.75rem)", paddingRight: "calc(var(--safe-right) + 0.75rem)" }}
       >
-        <div ref={slide.ref} {...slide.handlers} className="glass relative mx-auto flex max-w-md touch-pan-y select-none rounded-full p-1.5">
+        <div
+          ref={slide.ref}
+          {...slide.handlers}
+          className="glass relative mx-auto flex max-w-full touch-pan-y select-none rounded-full p-1.5"
+          // About 100px a tab, so the bar grows when the recap tab appears instead of stretching two tabs wide.
+          style={{ width: `calc(${tabs.length} * 6.25rem + 0.75rem)` }}
+        >
           <span
             aria-hidden="true"
             data-slide-indicator=""

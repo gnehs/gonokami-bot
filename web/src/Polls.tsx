@@ -5,7 +5,7 @@ import { formatDateTime, formatMonth, formatShortDateTime } from "./format.ts";
 import { useSwipeBack } from "./gestures.ts";
 import { nativeBackButton } from "./theme.ts";
 import { useAvatars } from "./avatars.ts";
-import { Avatar, AvatarStack, Bear, Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
+import { Avatar, AvatarStack, Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
 
 type Page = { polls: PollSummary[]; nextBefore: number | null; error: ApiError | null; loading: boolean };
@@ -135,13 +135,20 @@ function byMonth(polls: PollSummary[]): [string, PollSummary[]][] {
 function Greeting({ name }: { name: string }) {
   const firstName = name.trim().split(/\s+/)[0] || name;
   return (
-    <Group className="mt-2 flex min-h-[80px] items-center gap-3 px-4 py-3">
-      <Bear pose="hello" size={52} />
-      <div className="min-w-0 flex-1">
+    // The bear stands on the card's bottom edge and leans out over its top, so the card is not clipped.
+    <div className="relative mt-9 flex min-h-[84px] items-center rounded-[22px] bg-card py-3 pl-5 pr-32">
+      <div className="min-w-0">
         <p className="truncate text-[19px] font-bold leading-snug">嗨 {firstName}</p>
         <p className="mt-0.5 truncate text-[15px] text-hint">今天要ㄘ什麼？怕的是他</p>
       </div>
-    </Group>
+      <img
+        src={`${import.meta.env.BASE_URL}bear/hello.webp`}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="pointer-events-none absolute bottom-0 right-3 h-[120px] w-[120px] select-none rounded-br-[22px] object-contain object-bottom"
+      />
+    </div>
   );
 }
 

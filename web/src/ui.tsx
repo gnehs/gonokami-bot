@@ -129,7 +129,7 @@ export function Spinner({ label = "載入中…" }: { label?: string }) {
 
 export type BearPose = "hello" | "sleep" | "ramen" | "confused" | "crown";
 
-/** The 榮勾絲揪 mascot; until /bear/<pose>.png exists (or if it fails), a 🐻 in a soft circle stands in. */
+/** The 榮勾絲揪 mascot from /bear/<pose>.webp; if it fails to load, a 🐻 in a soft circle stands in. */
 export function Bear({ pose, size = 48 }: { pose: BearPose; size?: number }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
@@ -141,7 +141,7 @@ export function Bear({ pose, size = 48 }: { pose: BearPose; size?: number }) {
   }
   return (
     <img
-      src={`${import.meta.env.BASE_URL}bear/${pose}.png`}
+      src={`${import.meta.env.BASE_URL}bear/${pose}.webp`}
       alt=""
       width={size}
       height={size}
