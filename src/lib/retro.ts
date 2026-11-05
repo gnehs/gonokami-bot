@@ -1,5 +1,5 @@
 import { tallyOptions, tallyVoter, type PollOption } from "./poll.ts";
-import { taipeiParts } from "./time.ts";
+import { taipeiMidnight, taipeiParts } from "./time.ts";
 import type { ModelDay } from "./predict.ts";
 
 export type RetroPoll = {
@@ -16,8 +16,14 @@ export type RetroVoter = {
   name: string;
   pollsJoined: number;
   people: number;
+  /** Times this person answered only with the "not eating" option. */
+  qqCount: number;
   favoriteItem: string | null;
+  /** Polls joined per week of the year, index 0 being 1–7 January. */
+  weekCounts: number[];
 };
+
+export type RetroGathering = { question: string; createdAt: number; people: number };
 
 export type ChatRetro = {
   year: number;
@@ -25,8 +31,9 @@ export type ChatRetro = {
   ramenPollCount: number;
   totalPeople: number;
   itemTotals: Record<string, number>;
-  biggestPoll: { question: string; people: number; createdAt: number } | null;
-  monthCounts: number[];
+  /** Every poll that fed at least one person, oldest first. */
+  gatherings: RetroGathering[];
+  monthPeople: number[];
   weekdayCounts: number[];
   voters: RetroVoter[];
   me: (RetroVoter & { rank: number }) | null;
@@ -56,6 +63,13 @@ function argmax(record: Record<string, number>): string | null {
   return best;
 }
 
+const WEEKS_IN_YEAR = 53;
+
+function weekOfYear(at: number, year: number): number {
+  const day = (taipeiMidnight(taipeiParts(at).dateKey) - taipeiMidnight(`${year}-01-01`)) / 86_400_000;
+  return Math.floor(day / 7);
+}
+
 export function buildChatRetro(
   year: number,
   polls: RetroPoll[],
@@ -63,7 +77,9 @@ export function buildChatRetro(
   names: Map<number, string>,
   viewerId: number
 ): ChatRetro {
-  const inYear = polls.filter((poll) => taipeiParts(poll.createdAt).year === year);
+  const inYear = polls
+    .filter((poll) => taipeiParts(poll.createdAt).year === year)
+    .sort((a, b) => a.createdAt - b.createdAt);
   const byId = new Map(inYear.map((poll) => [poll.id, poll]));
   const retro: ChatRetro = {
     year,
@@ -71,8 +87,8 @@ export function buildChatRetro(
     ramenPollCount: 0,
     totalPeople: 0,
     itemTotals: {},
-    biggestPoll: null,
-    monthCounts: Array(12).fill(0),
+    gatherings: [],
+    monthPeople: Array(12).fill(0),
     weekdayCounts: Array(7).fill(0),
     voters: [],
     me: null,
@@ -81,42 +97,52 @@ export function buildChatRetro(
   for (const poll of inYear) {
     const tally = tallyOptions(poll.options);
     const { month, weekday } = taipeiParts(poll.createdAt);
-    retro.monthCounts[month - 1] += 1;
     retro.weekdayCounts[weekday] += 1;
+    retro.monthPeople[month - 1] += tally.people;
     retro.totalPeople += tally.people;
     if (Object.keys(tally.items).length > 0) retro.ramenPollCount += 1;
     for (const [item, count] of Object.entries(tally.items)) {
       retro.itemTotals[item] = (retro.itemTotals[item] ?? 0) + count;
     }
-    if (!retro.biggestPoll || tally.people > retro.biggestPoll.people) {
-      retro.biggestPoll = { question: poll.question, people: tally.people, createdAt: poll.createdAt };
+    if (tally.people > 0) {
+      retro.gatherings.push({ question: poll.question, createdAt: poll.createdAt, people: tally.people });
     }
   }
 
-  const voters = new Map<number, { pollsJoined: number; people: number; items: Record<string, number> }>();
+  type Tracked = Omit<RetroVoter, "userId" | "name" | "favoriteItem"> & { items: Record<string, number> };
+  const voters = new Map<number, Tracked>();
   for (const vote of votes) {
     const poll = byId.get(vote.pollId);
-    if (!poll) continue;
+    if (!poll || vote.optionIds.length === 0) continue;
+    const voter: Tracked = voters.get(vote.userId) ?? {
+      pollsJoined: 0,
+      people: 0,
+      qqCount: 0,
+      weekCounts: Array(WEEKS_IN_YEAR).fill(0),
+      items: {},
+    };
     const tally = tallyVoter(poll.options, vote.optionIds);
-    if (tally.people === 0) continue;
-    const voter = voters.get(vote.userId) ?? { pollsJoined: 0, people: 0, items: {} };
-    voter.pollsJoined += 1;
-    voter.people += tally.people;
-    for (const [item, count] of Object.entries(tally.items)) {
-      voter.items[item] = (voter.items[item] ?? 0) + count;
+    if (tally.people === 0) {
+      voter.qqCount += 1;
+    } else {
+      voter.pollsJoined += 1;
+      voter.people += tally.people;
+      voter.weekCounts[weekOfYear(poll.createdAt, year)] += 1;
+      for (const [item, count] of Object.entries(tally.items)) {
+        voter.items[item] = (voter.items[item] ?? 0) + count;
+      }
     }
     voters.set(vote.userId, voter);
   }
 
   retro.voters = [...voters.entries()]
-    .map(([userId, voter]) => ({
+    .map(([userId, { items, ...voter }]) => ({
       userId,
       name: names.get(userId) ?? "神秘客",
-      pollsJoined: voter.pollsJoined,
-      people: voter.people,
-      favoriteItem: argmax(voter.items),
+      ...voter,
+      favoriteItem: argmax(items),
     }))
-    .sort((a, b) => b.pollsJoined - a.pollsJoined || b.people - a.people);
+    .sort((a, b) => b.pollsJoined - a.pollsJoined || b.people - a.people || a.qqCount - b.qqCount);
 
   const rank = retro.voters.findIndex((voter) => voter.userId === viewerId);
   retro.me = rank === -1 ? null : { ...retro.voters[rank], rank: rank + 1 };

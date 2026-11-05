@@ -92,9 +92,15 @@ test("retrospective ranks voters and finds the viewer", () => {
   ];
   const retro = buildChatRetro(2026, polls, votes, new Map([[1, "熊熊"]]), 2);
   assert.equal(retro.pollCount, 2);
-  assert.deepEqual(retro.voters.map((voter) => voter.userId), [1, 2]);
+  assert.deepEqual(retro.voters.map((voter) => voter.userId), [1, 2, 3]);
+  assert.equal(retro.voters[0].name, "熊熊");
   assert.equal(retro.voters[0].favoriteItem, "🥚 加蛋");
   assert.equal(retro.me?.rank, 2);
+  assert.equal(retro.voters[2].qqCount, 1);
+  assert.equal(retro.voters[2].pollsJoined, 0);
+  assert.equal(retro.voters[0].weekCounts[8], 1, "1 March 2026 falls in week index 8");
+  assert.deepEqual(retro.monthPeople.slice(2, 4), [2, 2]);
+  assert.equal(retro.gatherings.length, 2);
 });
 
 test("queue response picks the newest record and its change time", () => {
