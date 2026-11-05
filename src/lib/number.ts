@@ -1,0 +1,153 @@
+import { db, api, BotApiError } from "sdk";
+import { and, eq } from "sdk/db";
+import { subscriptions } from "../schema.ts";
+import { parseTargetNumber, type QueueReading } from "./queue.ts";
+import { predictCallTime, readQueue } from "./store.ts";
+import { mention, type CallbackQuery, type Message } from "./telegram.ts";
+import { formatClock } from "./time.ts";
+
+const SUBSCRIPTION_TTL_MS = 5 * 60 * 60 * 1000;
+
+type Subscription = {
+  chatId: number;
+  userId: number;
+  firstName: string;
+  targetNumber: number;
+  messageId: number;
+  createdAt: number;
+};
+
+function cancelMarkup(userId: number) {
+  return { inline_keyboard: [[{ text: "🚫 取消叫號通知", callback_data: `cancelnumber_${userId}` }]] };
+}
+
+async function clearButton(chatId: number, messageId: number) {
+  try {
+    await api.editMessageReplyMarkup({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } });
+  } catch (error) {
+    if (!(error instanceof BotApiError && error.code === 400)) throw error;
+  }
+}
+
+async function findSubscription(chatId: number, userId: number): Promise<Subscription | null> {
+  return db
+    .select()
+    .from(subscriptions)
+    .where(and(eq(subscriptions.chatId, chatId), eq(subscriptions.userId, userId)))
+    .get();
+}
+
+async function deleteSubscription(sub: Subscription) {
+  await db
+    .delete(subscriptions)
+    .where(and(eq(subscriptions.chatId, sub.chatId), eq(subscriptions.userId, sub.userId)));
+}
+
+async function predictionLine(reading: QueueReading, target: number): Promise<string> {
+  try {
+    return `\n🕒 預估叫號時間 <b>${formatClock(await predictCallTime(reading.number, target))}</b>`;
+  } catch (error) {
+    console.error("prediction failed", error);
+    return "\n預測叫號時間暫時不可用，晚點再試。";
+  }
+}
+
+async function reply(message: Message, text: string, extra: Record<string, unknown> = {}) {
+  return api.sendMessage({
+    chat_id: message.chat.id,
+    text,
+    parse_mode: "HTML",
+    reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
+    ...extra,
+  });
+}
+
+export async function handleNumberCommand(message: Message, arg: string | undefined) {
+  const from = message.from!;
+  const reading = await readQueue();
+  if (!reading) return reply(message, "挖哩咧 😵‍💫，偶拿不到號碼，很遜欸。");
+
+  let text = `👑 哼嗯，現在號碼是 <b>${reading.number}</b>，醬子。`;
+  const existing = await findSubscription(message.chat.id, from.id);
+
+  if (arg === undefined) {
+    if (existing) {
+      text += `\n✅ 你訂閱的 <b>${existing.targetNumber}</b> 號偶記下了，叫到再跟你說，安安。`;
+      text += await predictionLine(reading, existing.targetNumber);
+      return reply(message, text, { reply_markup: cancelMarkup(from.id) });
+    }
+    return reply(message, `${text}\n\n想訂閱叫號？打 <code>/number 你的號碼</code>，偶幫你記著，很ㄅㄧㄤˋ吧 ✨。`);
+  }
+
+  const target = parseTargetNumber(arg);
+  if (target === null) {
+    return reply(message, `${text}\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`);
+  }
+  if (target <= reading.number) {
+    return reply(message, `${text}\n🤡 這位同學，<b>${target}</b> 已經過了，你很奇欸。`);
+  }
+
+  if (existing) {
+    await deleteSubscription(existing);
+    await clearButton(existing.chatId, existing.messageId);
+    text += `\n🔁 幫你把叫號通知從 <b>${existing.targetNumber}</b> 改成 <b>${target}</b> 號了，怕的是他。`;
+  } else {
+    text += `\n🔔 <b>${target}</b> 號還沒到，叫到偶會在這裡喊你，怕的是他。`;
+  }
+  text += await predictionLine(reading, target);
+  const sent = await reply(message, text, { reply_markup: cancelMarkup(from.id) });
+  await db.insert(subscriptions).values({
+    chatId: message.chat.id,
+    userId: from.id,
+    firstName: from.first_name,
+    targetNumber: target,
+    messageId: sent.message_id,
+    createdAt: Date.now(),
+  });
+}
+
+export async function handleCancelNumber(query: CallbackQuery, ownerId: number) {
+  const message = query.message;
+  if (!message) return api.answerCallbackQuery({ callback_query_id: query.id, text: "訊息不見了，偶也沒轍。" });
+  if (ownerId !== query.from.id) {
+    return api.answerCallbackQuery({ callback_query_id: query.id, text: "🗣️ 告老師喔，只有訂閱的人才能取消，你很奇欸。" });
+  }
+
+  await clearButton(message.chat.id, message.message_id);
+  const sub = await findSubscription(message.chat.id, query.from.id);
+  if (!sub) return api.answerCallbackQuery({ callback_query_id: query.id, text: "你已經沒有叫號通知了，醬子。" });
+
+  await deleteSubscription(sub);
+  if (sub.messageId !== message.message_id) await clearButton(sub.chatId, sub.messageId);
+  await api.answerCallbackQuery({ callback_query_id: query.id, text: "已取消叫號通知。" });
+  await reply(message, `🚫 哼嗯，偶幫你取消 <b>${sub.targetNumber}</b> 號的訂閱了。醬子。`);
+}
+
+/** Called every minute: announce reached numbers, drop subscriptions older than five hours. */
+export async function notifySubscribers(reading: QueueReading) {
+  const subs: Subscription[] = await db.select().from(subscriptions).all();
+  let notified = 0;
+  for (const sub of subs) {
+    const reached = reading.number >= sub.targetNumber;
+    const expired = Date.now() - sub.createdAt > SUBSCRIPTION_TTL_MS;
+    if (!reached && !expired) continue;
+
+    // Delete first: a crash after sending must not announce the same number twice next minute.
+    await deleteSubscription(sub);
+    try {
+      await api.sendMessage({
+        chat_id: sub.chatId,
+        text: reached
+          ? `喂～ 👑 ${mention(sub.userId, sub.firstName)} ，你訂的 ${sub.targetNumber} 號到了，怕的是他。還不快去！`
+          : `欸 👋 ${mention(sub.userId, sub.firstName)} ，你的 ${sub.targetNumber} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
+        parse_mode: "HTML",
+        reply_parameters: { message_id: sub.messageId, allow_sending_without_reply: true },
+      });
+      await clearButton(sub.chatId, sub.messageId);
+      notified += 1;
+    } catch (error) {
+      console.error("subscription notify failed", { sub, error: String(error) });
+    }
+  }
+  return notified;
+}

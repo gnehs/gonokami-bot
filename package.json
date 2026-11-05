@@ -1,32 +1,27 @@
 {
   "name": "gonokami-bot",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "private": true,
   "type": "module",
-  "description": "",
-  "main": "bot.ts",
-  "scripts": {
-    "start": "node bot.ts",
-    "dev": "nodemon --exec node bot.ts",
-    "typecheck": "tsc -p . --noEmit",
-    "test": "node --test tests/*.test.ts"
-  },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
   "engines": {
     "node": ">=22.18"
   },
   "packageManager": "pnpm@10.11.0",
-  "dependencies": {
-    "@openrouter/ai-sdk-provider": "^2.9.0",
-    "ai": "^6.0.190",
-    "dotenv": "^17.4.2",
-    "grammy": "^1.43.0",
-    "zod": "^4.4.3"
+  "scripts": {
+    "build:cloud": "rm -rf tgcloud/lib tgcloud/handlers tgcloud/endpoints && tsc -p tsconfig.cloud.json",
+    "build:web": "vite build",
+    "build": "pnpm build:cloud && pnpm build:web",
+    "dev:web": "vite",
+    "typecheck": "tsc -p tsconfig.cloud.json --noEmit && tsc -p tsconfig.json --noEmit",
+    "test": "node --test tests/*.test.ts",
+    "deploy": "pnpm build && tgcloud push && pnpm deploy:worker",
+    "deploy:worker": "node scripts/bundle-sources.ts && wrangler deploy -c worker/wrangler.jsonc",
+    "import-history": "node scripts/import-history.ts"
   },
   "devDependencies": {
+    "@tgcloud/cli": "^0.2.0",
     "@types/node": "^25.9.1",
-    "nodemon": "^3.1.14",
     "typescript": "^6.0.3"
   }
 }
