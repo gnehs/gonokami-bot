@@ -13,7 +13,7 @@
     "build:web": "vite build",
     "build": "pnpm build:cloud && pnpm build:web",
     "dev:web": "vite",
-    "typecheck": "tsc -p tsconfig.cloud.json --noEmit && tsc -p tsconfig.json --noEmit && tsc -p worker/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.cloud.json --noEmit && tsc -p tsconfig.json --noEmit && tsc -p worker/tsconfig.json && tsc -p web/tsconfig.json",
     "test": "node --test tests/*.test.ts",
     "deploy": "pnpm build && tgcloud push && pnpm deploy:worker",
     "deploy:worker": "node scripts/bundle-sources.ts && wrangler deploy -c worker/wrangler.jsonc",
@@ -21,9 +21,17 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261104.1",
+    "@tailwindcss/vite": "^4.3.4",
     "@tgcloud/cli": "^0.2.0",
     "@types/node": "^25.9.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.4",
     "typescript": "^6.0.3",
+    "vite": "^8.3.6",
     "wrangler": "^4.157.0"
   }
 }
