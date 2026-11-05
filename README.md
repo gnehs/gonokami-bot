@@ -30,7 +30,7 @@ Mini App 只會顯示你目前還在的群組。每次讀取群組資料前，�
 | `worker/` | Cloudflare Worker，週五到週日 10:00–21:59 每分鐘觸發一次 `endpoints/tick`。五之神只在這幾天用叫號看板。 |
 | `scripts/` | 歷史資料匯入，以及打包 Worker 用的模組原始碼。 |
 
-Telegram Serverless 沒有排程功能，所以由 Worker 定時呼叫 tgcloud 的 `/run` API。`/run` 只執行請求裡附上的原始碼、不讀已部署的版本，所以 Worker 部署時會把 `tgcloud/` 的編譯結果一起打包進去。每次改完 bot 都要用 `pnpm deploy` 一起部署，Worker 才不會跑舊版程式。
+Telegram Serverless 沒有排程功能，所以由 Worker 定時呼叫 tgcloud 的 `/run` API。`/run` 只執行請求裡附上的原始碼、不讀已部署的版本，所以 Worker 部署時會把 `tgcloud/` 的編譯結果一起打包進去。每次改完 bot 都要用 `pnpm run deploy` 一起部署，Worker 才不會跑舊版程式。
 
 ### 叫號預測
 
@@ -92,7 +92,7 @@ pnpm dev:web     # 在一般瀏覽器開 Mini App，會用假資料
 之後每次更新只要：
 
 ```bash
-pnpm deploy
+pnpm run deploy
 ```
 
 改到 `src/schema.ts` 時，`push` 只會列出待套用的變更，記得再跑一次 `pnpm exec tgcloud migrate`。
