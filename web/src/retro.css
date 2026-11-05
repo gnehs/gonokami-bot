@@ -128,8 +128,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* overflow-x alone makes overflow-y auto too; a few px of vertical slack then traps page swipes. */
 .retro-scroll {
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
   overscroll-behavior-x: contain;
 }
