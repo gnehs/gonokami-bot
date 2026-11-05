@@ -146,6 +146,8 @@ export function Bear({ pose, size = 48 }: { pose: BearPose; size?: number }) {
       width={size}
       height={size}
       draggable={false}
+      loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
       className="shrink-0 select-none object-contain"
       style={{ width: size, height: size }}
