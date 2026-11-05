@@ -6,54 +6,73 @@
   --color-fg: var(--fg);
   --color-hint: var(--hint);
   --color-soft: var(--soft);
+  --color-fill: var(--fill);
+  --color-thumb: var(--thumb);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-line: var(--line);
   --color-danger: var(--danger);
+  --color-up: var(--up);
+  --color-down: var(--down);
 }
 
+/* Wallet-like palette, independent of --tg-theme-* so the look is the same in every Telegram theme. */
 :root {
-  --f-bg: #ffffff;
-  --f-card: #f1f3f5;
-  --f-fg: #111111;
-  --f-hint: #6b7280;
-  --f-accent: #2481cc;
-  --f-accent-fg: #ffffff;
-  --f-danger: #d33f3f;
-  --bg: var(--tg-theme-bg-color, var(--f-bg));
-  --card: var(--tg-theme-secondary-bg-color, var(--f-card));
-  --fg: var(--tg-theme-text-color, var(--f-fg));
-  --hint: var(--tg-theme-hint-color, var(--f-hint));
-  --accent: var(--tg-theme-button-color, var(--f-accent));
-  --accent-fg: var(--tg-theme-button-text-color, var(--f-accent-fg));
-  --danger: var(--tg-theme-destructive-text-color, var(--f-danger));
-  --soft: color-mix(in srgb, var(--hint) 55%, var(--bg));
-  --line: color-mix(in srgb, var(--hint) 22%, var(--bg));
+  --bg: #efeff4;
+  --card: #ffffff;
+  --fg: #000000;
+  --hint: #8a8a8e;
+  --soft: #c7c7cc;
+  --fill: #e3e3e8;
+  --thumb: #ffffff;
+  --line: #d8d8dc;
+  --accent: #ff4fa0;
+  --accent-fg: #ffffff;
+  --up: #2fb84f;
+  --down: #ff3b30;
+  --danger: #ff3b30;
+  --icon-from: #45c8ff;
+  --icon-to: #0a84ff;
+  --glass: color-mix(in srgb, #ffffff 84%, transparent);
+  --glass-edge: color-mix(in srgb, #ffffff 80%, transparent);
+  --shadow: 0 8px 28px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
   --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
   --safe-left: max(env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px));
   --safe-right: max(env(safe-area-inset-right, 0px), var(--tg-safe-area-inset-right, 0px));
-  color-scheme: light dark;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --f-bg: #17212b;
-    --f-card: #232e3c;
-    --f-fg: #f5f5f5;
-    --f-hint: #7d8b99;
-    --f-accent: #5288c1;
-    --f-danger: #ec3942;
-  }
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --card: #1c1c1e;
+  --fg: #ffffff;
+  --hint: #8e8e93;
+  --soft: #48484a;
+  --fill: #2c2c2e;
+  --thumb: #5a5a5e;
+  --line: #38383a;
+  --up: #30d158;
+  --down: #ff453a;
+  --danger: #ff453a;
+  --icon-from: #3bb8ff;
+  --icon-to: #0a6cff;
+  --glass: color-mix(in srgb, #1c1c1e 84%, transparent);
+  --glass-edge: color-mix(in srgb, #ffffff 12%, transparent);
+  --shadow: 0 8px 28px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
 }
 
 html,
 body {
   background: var(--bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
 }
 
 body {
@@ -62,15 +81,125 @@ body {
   padding-right: var(--safe-right);
 }
 
-button,
-input {
-  font: inherit;
+/* Layered so utilities can still size inputs; never below 16px or iOS zooms on focus. */
+@layer base {
+  input {
+    font-size: 17px;
+  }
 }
 
-input {
-  font-size: 16px;
+button,
+[role="button"] {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Wallet sets its balances in SF Pro Rounded. */
+.num {
+  font-family: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.press {
+  transition: transform 140ms var(--ease-out), background-color 140ms ease;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+.icon-bubble {
+  background: linear-gradient(160deg, var(--icon-from), var(--icon-to));
+  color: #ffffff;
+}
+
+.row:not(:first-child) > .row-body {
+  border-top: 0.5px solid var(--line);
+}
+.row-tap {
+  transition: background-color 120ms ease;
+}
+.row-tap:active {
+  background: var(--fill);
+}
+
+.pill-up {
+  color: var(--up);
+  background: color-mix(in srgb, var(--up) 14%, var(--card));
+}
+.pill-down {
+  color: var(--down);
+  background: color-mix(in srgb, var(--down) 14%, var(--card));
+}
+.chip {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--icon-to) 13%, var(--card));
+}
+.pill-neutral {
+  color: var(--hint);
+  background: var(--fill);
+}
+
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: var(--shadow), inset 0 0 0 0.5px var(--glass-edge);
+}
+
+.tab-capsule {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  transition: transform 280ms var(--ease-drawer);
+}
+
+.segment {
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+.segment[aria-pressed="true"] {
+  background: var(--thumb);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+}
+
+.sheet {
+  transition: transform 340ms var(--ease-drawer);
+}
+.sheet[data-open="true"] {
+  transform: translateX(0);
+}
+.sheet[data-open="false"] {
+  transform: translateX(100%);
+  transition-duration: 240ms;
+}
+@starting-style {
+  .sheet[data-open="true"] {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    transition: opacity 160ms ease;
+  }
+  .sheet[data-open="true"],
+  .sheet[data-open="false"] {
+    transform: none;
+  }
+  .sheet[data-open="false"] {
+    opacity: 0;
+  }
+  @starting-style {
+    .sheet[data-open="true"] {
+      transform: none;
+      opacity: 0;
+    }
+  }
+  .tab-capsule,
+  .press {
+    transition: none;
+  }
 }

@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PollSummary } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
 import { formatDateTime } from "./format.ts";
-import { Empty, ErrorView, Spinner, toApiError } from "./ui.tsx";
+import { nativeBackButton } from "./theme.ts";
+import { Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
 
 type Page = { polls: PollSummary[]; nextBefore: number | null; error: ApiError | null; loading: boolean };
+/** `open: false` keeps the panel mounted while it slides out. */
+type Detail = { poll: PollSummary; open: boolean } | null;
+
+const CLOSE_MS = 260;
 
 export function Polls({ chatId }: { chatId: number }) {
   const [page, setPage] = useState<Page>({ polls: [], nextBefore: null, error: null, loading: true });
+  const [detail, setDetail] = useState<Detail>(null);
   const generation = useRef(0);
 
   const load = useCallback(
@@ -36,8 +42,16 @@ export function Polls({ chatId }: { chatId: number }) {
 
   useEffect(() => {
     setPage({ polls: [], nextBefore: null, error: null, loading: true });
+    setDetail(null);
     load();
   }, [load]);
+
+  const closeDetail = useCallback(() => setDetail((d) => d && { ...d, open: false }), []);
+  useEffect(() => {
+    if (detail?.open !== false) return;
+    const timer = setTimeout(() => setDetail(null), CLOSE_MS);
+    return () => clearTimeout(timer);
+  }, [detail]);
 
   const sentinel = useRef<HTMLDivElement>(null);
   const canMore = page.nextBefore !== null && !page.loading && !page.error;
@@ -60,80 +74,158 @@ export function Polls({ chatId }: { chatId: number }) {
   }
 
   return (
-    <div className="space-y-3">
-      {page.polls.map((poll) => (
-        <PollCard key={poll.id} poll={poll} />
-      ))}
+    <>
+      <Section title="投票歷史">
+        <Group>
+          {page.polls.map((poll) => (
+            <Row
+              key={poll.id}
+              icon={<PollIcon poll={poll} />}
+              title={poll.question}
+              subtitle={formatDateTime(poll.createdAt)}
+              footer={<ItemChips poll={poll} className="mt-2" />}
+              value={`${poll.tally.people} 人`}
+              detail={<span className={poll.isClosed ? "text-hint" : "text-up"}>{poll.isClosed ? "已結束" : "進行中"}</span>}
+              onClick={() => setDetail({ poll, open: true })}
+            />
+          ))}
+        </Group>
+      </Section>
       {page.error && <ErrorView error={page.error} onRetry={() => load(page.nextBefore ?? undefined)} />}
       {page.loading && <Spinner />}
       {canMore && (
-        <div ref={sentinel} className="py-2 text-center">
-          <button type="button" onClick={() => load(page.nextBefore!)} className="rounded-full bg-card px-5 py-2 text-sm font-medium text-accent active:brightness-95">
+        <div ref={sentinel} className="pt-4 text-center">
+          <button type="button" onClick={() => load(page.nextBefore!)} className="press rounded-full bg-card px-6 py-2.5 text-[15px] font-semibold text-accent">
             載入更多
           </button>
         </div>
       )}
-      {page.nextBefore === null && !page.loading && <p className="py-4 text-center text-sm text-hint">已經到底囉，再翻就是考古了</p>}
+      {page.nextBefore === null && !page.loading && <p className="py-6 text-center text-[15px] text-hint">已經到底囉，再翻就是考古了</p>}
+      {detail && <PollDetail poll={detail.poll} open={detail.open} onClose={closeDetail} />}
+    </>
+  );
+}
+
+function PollIcon({ poll, size }: { poll: PollSummary; size?: number }) {
+  return (
+    <IconBubble size={size}>
+      {poll.kind === "ramen" ? (
+        "🍜"
+      ) : (
+        <svg width="50%" height="50%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      )}
+    </IconBubble>
+  );
+}
+
+function ItemChips({ poll, className = "" }: { poll: PollSummary; className?: string }) {
+  const items = Object.entries(poll.tally.items).filter(([, count]) => count > 0);
+  if (items.length === 0) return null;
+  return (
+    <span className={`flex flex-wrap gap-1.5 ${className}`}>
+      {items.map(([item, count]) => (
+        <Chip key={item}>
+          {item} <b className="num">{count}</b>
+        </Chip>
+      ))}
+    </span>
+  );
+}
+
+function PollDetail({ poll, open, onClose }: { poll: PollSummary; open: boolean; onClose: () => void }) {
+  const native = nativeBackButton();
+  useEffect(() => {
+    if (!native || !open) return;
+    native.show();
+    native.onClick(onClose);
+    return () => {
+      native.offClick(onClose);
+      native.hide();
+    };
+  }, [native, open, onClose]);
+
+  const hasItems = Object.values(poll.tally.items).some((count) => count > 0);
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={poll.question}
+      data-open={open}
+      className="sheet fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-bg"
+    >
+      <div
+        className="mx-auto max-w-xl px-4"
+        style={{
+          paddingTop: "calc(var(--safe-top) + 0.75rem)",
+          paddingBottom: "calc(var(--safe-bottom) + 2rem)",
+          paddingLeft: "calc(var(--safe-left) + 1rem)",
+          paddingRight: "calc(var(--safe-right) + 1rem)",
+        }}
+      >
+        {!native && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="返回投票紀錄"
+            className="press glass flex size-11 items-center justify-center rounded-full"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+          </button>
+        )}
+
+        <div className="mt-6 flex items-center gap-3 px-1">
+          <PollIcon poll={poll} size={36} />
+          <h1 className="min-w-0 break-words text-[20px] font-semibold leading-snug">{poll.question}</h1>
+        </div>
+        <p className="num mt-3 px-1 text-[64px] font-bold leading-none">
+          {poll.tally.people}
+          <span className="ml-1.5 text-[34px]">人</span>
+        </p>
+        <p className="mt-2 px-1 text-[17px] text-hint">{poll.voters.length} 位投票</p>
+
+        <Group className="mt-6">
+          <Field label="狀態">
+            <Pill tone={poll.isClosed ? "neutral" : "up"}>{poll.isClosed ? "已結束" : "進行中"}</Pill>
+          </Field>
+          <Field label="日期">{formatDateTime(poll.createdAt)}</Field>
+          {hasItems && (
+            <Field label="品項">
+              <ItemChips poll={poll} className="mt-1" />
+            </Field>
+          )}
+        </Group>
+
+        {poll.voters.length > 0 && (
+          <Section title="投票名單" aside={`${poll.voters.length} 位`}>
+            <Group>
+              {poll.voters.map((voter) => (
+                <Row
+                  key={voter.userId}
+                  icon={<IconBubble>{Array.from(voter.name)[0]}</IconBubble>}
+                  title={voter.name}
+                  subtitle={voter.choices.join("、")}
+                  value={`${voter.people} 人`}
+                />
+              ))}
+            </Group>
+          </Section>
+        )}
+      </div>
     </div>
   );
 }
 
-function PollCard({ poll }: { poll: PollSummary }) {
-  const [open, setOpen] = useState(false);
-  const items = Object.entries(poll.tally.items);
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <article className="rounded-2xl bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="min-w-0 break-words text-base font-semibold leading-snug">{poll.question}</h3>
-        <span
-          className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${poll.isClosed ? "bg-line text-hint" : "bg-accent text-accent-fg"}`}
-        >
-          {poll.isClosed ? "已結束" : "進行中"}
-        </span>
+    <div className="row pl-4">
+      <div className="row-body py-3 mr-4">
+        <p className="text-[15px] text-hint">{label}</p>
+        <div className="mt-0.5 text-[17px]">{children}</div>
       </div>
-      <p className="mt-1 text-xs text-hint">{formatDateTime(poll.createdAt)}</p>
-
-      <p className="mt-3 text-sm">
-        共 <b className="tabular text-lg">{poll.tally.people}</b> 人
-      </p>
-      {poll.kind === "ramen" && items.length > 0 && (
-        <ul className="mt-2 flex flex-wrap gap-2">
-          {items.map(([item, count]) => (
-            <li key={item} className="rounded-full border border-line px-3 py-1 text-sm">
-              {item} <b className="tabular">{count}</b>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {poll.voters.length > 0 && (
-        <>
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-            className="mt-3 flex w-full items-center gap-1 text-sm font-medium text-accent"
-          >
-            {open ? "收起名單" : `看誰投了 (${poll.voters.length})`}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={open ? "rotate-180" : ""}>
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-          {open && (
-            <ul className="mt-2 divide-y divide-line">
-              {poll.voters.map((voter) => (
-                <li key={voter.userId} className="flex items-baseline justify-between gap-3 py-2 text-sm">
-                  <span className="min-w-0">
-                    <span className="font-medium">{voter.name}</span>
-                    <span className="ml-2 break-words text-hint">{voter.choices.join("、")}</span>
-                  </span>
-                  <span className="tabular shrink-0 text-hint">{voter.people} 人</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-    </article>
+    </div>
   );
 }

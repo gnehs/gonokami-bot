@@ -1,10 +1,29 @@
-import { useState, type FormEvent } from "react";
-import type { QueueResult } from "../../src/lib/api-types.ts";
+import { useState, type FormEvent, type ReactNode } from "react";
+import type { Point, QueueResult } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
 import { QueueChart } from "./Chart.tsx";
-import { formatAgo, formatPredicted, formatTime } from "./format.ts";
-import { Card, Empty, ErrorView, SectionTitle, Spinner, toApiError, useRemote } from "./ui.tsx";
+import { formatAgo, formatPredicted } from "./format.ts";
+import { Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError, useRemote } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
+
+const glyph = (d: ReactNode) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    {d}
+  </svg>
+);
+const TICKET = glyph(<path d="M4 7.5A1.5 1.5 0 0 1 5.5 6h13A1.5 1.5 0 0 1 20 7.5V10a2 2 0 0 0 0 4v2.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 16.5V14a2 2 0 0 0 0-4z" />);
+const CLOCK = glyph(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 1.5" /></>);
+const BELL = glyph(<><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>);
+
+/** Tickets called per hour across today's readings, or null before there is a span to measure. */
+function pace(today: Point[]): { called: number; perHour: number } | null {
+  if (today.length < 2) return null;
+  const sorted = [...today].sort((a, b) => a[1] - b[1]);
+  const [n0, m0] = sorted[0];
+  const [n1, m1] = sorted[sorted.length - 1];
+  if (m1 <= m0) return null;
+  return { called: n1 - n0, perHour: ((n1 - n0) / (m1 - m0)) * 60 };
+}
 
 export function Queue() {
   const initial = useRemote(() => call("queue", {}), "queue");
@@ -33,86 +52,110 @@ export function Queue() {
   }
 
   const { reading, today, prediction, accuracy, subscriptions } = data;
+  const todayPace = pace(today);
   return (
     <div>
-      <Card>
-        {reading ? (
-          <>
-            <p className="text-sm text-hint">目前叫到</p>
-            <p className="tabular text-6xl font-bold leading-tight">{reading.number}</p>
-            <p className="text-sm text-hint">
-              {formatAgo(reading.changedAt)}更新，{formatTime(reading.changedAt)} 換號
-            </p>
-          </>
-        ) : (
-          <Empty emoji="😴" title="現在沒有叫號資料">店家可能還沒開張，榮勾斯揪也在蓋被被。</Empty>
-        )}
-      </Card>
-
-      <SectionTitle>今天的叫號曲線</SectionTitle>
-      <Card>
-        {today.length >= 2 ? (
-          <QueueChart points={today} />
-        ) : (
-          <p className="py-6 text-center text-sm text-hint">今天還沒有足夠的點可以畫線，晚點再來看看。</p>
-        )}
-      </Card>
-
-      <SectionTitle>想知道幾點輪到你？</SectionTitle>
-      <Card>
-        <form onSubmit={submit} className="flex gap-2">
-          <input
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={4}
-            value={target}
-            onChange={(e) => setTarget(e.target.value.replace(/\D/g, ""))}
-            placeholder="輸入你的號碼 (1001–1200)"
-            aria-label="目標號碼"
-            className="min-w-0 flex-1 rounded-xl border border-line bg-bg px-3 py-2.5 text-fg outline-none focus:border-accent"
-          />
-          <button
-            type="submit"
-            disabled={!valid || busy}
-            className="shrink-0 rounded-xl bg-accent px-5 py-2.5 font-medium text-accent-fg active:brightness-90 disabled:bg-line disabled:text-hint"
-          >
-            {busy ? "算算中…" : "預測"}
-          </button>
-        </form>
-        {target !== "" && !valid && target.length === 4 && <p className="mt-2 text-sm text-danger">號碼要在 1001 到 1200 之間喔。</p>}
-        {formError && <p className="mt-2 text-sm text-danger">{formError.message}</p>}
-        {prediction && (
-          <p className="mt-3 text-sm">
-            <b className="tabular">{prediction.target}</b> 號預計
-            <b className="ml-1 text-base">{formatPredicted(prediction.at)}</b> 叫到
+      {reading ? (
+        <div className="pb-2 pt-8 text-center">
+          <p className="text-[17px] font-semibold">目前叫到</p>
+          <p className="num mt-1 text-[76px] font-bold leading-none">
+            {reading.number}
+            <span className="ml-1 text-[38px] text-hint">號</span>
           </p>
-        )}
-      </Card>
-
-      <SectionTitle>我訂閱的號碼</SectionTitle>
-      {subscriptions.length === 0 ? (
-        <Card>
-          <p className="text-center text-sm text-hint">還沒有訂閱。在群組裡跟榮勾斯揪說一聲，到號前他會敲你。</p>
-        </Card>
+          <p className="mt-3 text-[17px] text-hint">{formatAgo(reading.changedAt)}換號</p>
+          {todayPace && (
+            <p className="mt-1.5 flex items-center justify-center gap-2 text-[17px]">
+              <span className="num font-semibold text-up">+{todayPace.called}</span>
+              <Pill tone="up">↑ {todayPace.perHour.toFixed(1)} 號/時</Pill>
+              <span className="text-hint">今天</span>
+            </p>
+          )}
+        </div>
       ) : (
-        <Card className="divide-y divide-line !py-1">
-          {subscriptions.map((sub, i) => (
-            <div key={i} className="flex items-baseline justify-between gap-3 py-3">
-              <div className="min-w-0">
-                <p className="tabular text-lg font-semibold">{sub.targetNumber} 號</p>
-                <p className="truncate text-xs text-hint">{sub.chatTitle}</p>
-              </div>
-              <p className="shrink-0 text-sm">{sub.predictedAt ? `預計 ${formatPredicted(sub.predictedAt)}` : "還算不出來"}</p>
-            </div>
-          ))}
-        </Card>
+        <Empty emoji="😴" title="現在沒有叫號資料">店家可能還沒開張，榮勾斯揪也在蓋被被。</Empty>
       )}
 
+      <Section title="今天的叫號曲線">
+        <Group className="px-4 pb-3 pt-4">
+          {today.length >= 2 ? (
+            <QueueChart points={today} />
+          ) : (
+            <p className="py-6 text-center text-[15px] text-hint">今天還沒有足夠的點可以畫線，晚點再來看看。</p>
+          )}
+        </Group>
+      </Section>
+
+      <Section title="想知道幾點輪到你？">
+        <Group>
+          <form onSubmit={submit} className="row flex items-center pl-4">
+            <span className="mr-3"><IconBubble>{TICKET}</IconBubble></span>
+            <span className="row-body flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2 mr-3">
+              <label className="min-w-0 flex-1">
+                <span className="block text-[13px] text-hint">你的號碼</span>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  enterKeyHint="go"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value.replace(/\D/g, ""))}
+                  placeholder="1001–1200"
+                  aria-label="目標號碼"
+                  className="num block w-full bg-transparent text-[20px] font-semibold text-fg outline-none placeholder:font-normal placeholder:text-soft"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={!valid || busy}
+                className="press shrink-0 rounded-full bg-accent px-5 py-2 text-[15px] font-semibold text-accent-fg disabled:bg-fill disabled:text-hint"
+              >
+                {busy ? "算算中…" : "預測"}
+              </button>
+            </span>
+          </form>
+          {prediction && (
+            <Row icon={<IconBubble>{CLOCK}</IconBubble>} title={`${prediction.target} 號`} subtitle="預計叫到" value={formatPredicted(prediction.at)} />
+          )}
+        </Group>
+        {target !== "" && !valid && target.length === 4 && <p className="mt-2 px-4 text-[13px] text-danger">號碼要在 1001 到 1200 之間喔。</p>}
+        {formError && <p className="mt-2 px-4 text-[13px] text-danger">{formError.message}</p>}
+      </Section>
+
+      <Section title="我訂閱的號碼">
+        {subscriptions.length === 0 ? (
+          <Group className="px-6 py-5">
+            <p className="text-center text-[15px] text-hint">還沒有訂閱。在群組裡跟榮勾斯揪說一聲，到號前他會敲你。</p>
+          </Group>
+        ) : (
+          <Group>
+            {subscriptions.map((sub, i) => (
+              <Row
+                key={i}
+                icon={<IconBubble>{BELL}</IconBubble>}
+                title={`${sub.targetNumber} 號`}
+                subtitle={sub.chatTitle}
+                value={sub.predictedAt ? formatPredicted(sub.predictedAt) : "—"}
+                detail={<span className="text-hint">{sub.predictedAt ? "預計叫到" : "還算不出來"}</span>}
+              />
+            ))}
+          </Group>
+        )}
+      </Section>
+
       {accuracy && (
-        <p className="mt-5 px-1 text-center text-xs leading-relaxed text-hint">
-          過去 {accuracy.dayCount} 天回測：<b>{Math.round(accuracy.within10MinutesRate * 100)}%</b> 誤差在 10 分鐘內，
-          誤差中位數約 {accuracy.medianAbsErrorMinutes.toFixed(1)} 分鐘。
-        </p>
+        <Section title="預測準不準" aside={`回測 ${accuracy.dayCount} 天`}>
+          <Group className="px-4 py-4">
+            <p className="text-[15px] text-hint">誤差中位數</p>
+            <p className="num mt-0.5 text-[34px] font-bold leading-tight">
+              {accuracy.medianAbsErrorMinutes.toFixed(1)}
+              <span className="ml-1 text-[20px]">分鐘</span>
+            </p>
+            <p className="mt-2 flex items-center gap-2">
+              <Pill tone="up">✓ {Math.round(accuracy.within10MinutesRate * 100)}%</Pill>
+              <span className="text-[15px] text-hint">誤差在 10 分鐘內</span>
+            </p>
+          </Group>
+        </Section>
       )}
     </div>
   );

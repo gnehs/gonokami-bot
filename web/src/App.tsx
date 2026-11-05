@@ -8,31 +8,18 @@ import { Empty, ErrorView, Spinner, useRemote } from "./ui.tsx";
 
 type Tab = "polls" | "queue" | "retro";
 
+// Filled glyphs; evenodd cuts the inner shape out so it shows the glass behind.
 const ICONS: Record<Tab, ReactNode> = {
-  polls: (
-    <>
-      <path d="M9 11l3 3L22 4" />
-      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-    </>
-  ),
-  queue: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </>
-  ),
-  retro: (
-    <>
-      <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" />
-    </>
-  ),
+  polls: <path fillRule="evenodd" d="M6.5 3h11A3.5 3.5 0 0 1 21 6.5v11a3.5 3.5 0 0 1-3.5 3.5h-11A3.5 3.5 0 0 1 3 17.5v-11A3.5 3.5 0 0 1 6.5 3zM7.2 12.6l1.4-1.4 2 2 4.9-4.9 1.4 1.4-6.3 6.3z" />,
+  queue: <path fillRule="evenodd" d="M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zM11 7h2v4.6l3 1.8-1 1.7-4-2.4z" />,
+  retro: <path d="M12 2.8l2.8 5.7 6.3.9-4.5 4.4 1 6.3L12 17.1l-5.6 3 1-6.3-4.5-4.4 6.3-.9z" strokeLinejoin="round" />,
 };
 
 const chatLabel = (chat: ChatSummary, userId: number) => (chat.id === userId ? "私訊" : chat.title);
 
 export function App() {
   const me = useRemote(() => call("me", {}), "me");
-  if (me.loading) return <Spinner />;
+  if (me.loading) return <div className="pt-[var(--safe-top)]"><Spinner /></div>;
   if (me.error) return <div className="pt-[var(--safe-top)]"><ErrorView error={me.error} onRetry={me.reload} /></div>;
   return <Shell me={me.data!} />;
 }
@@ -49,6 +36,7 @@ function Shell({ me }: { me: MeResult }) {
     { id: "queue", label: "叫號" },
     ...(me.retroYear !== null ? [{ id: "retro" as const, label: "年度回顧" }] : []),
   ];
+  const activeIndex = tabs.findIndex((t) => t.id === tab);
   const needsChat = tab !== "queue";
   const showChats = needsChat && me.chats.length > 0;
 
@@ -56,20 +44,20 @@ function Shell({ me }: { me: MeResult }) {
     <div className="mx-auto max-w-xl">
       {showChats && (
         <nav aria-label="切換群組" className="sticky top-0 z-10 bg-bg" style={{ paddingTop: "var(--safe-top)" }}>
-          <div className="flex gap-2 overflow-x-auto px-4 py-3 [scrollbar-width:none]">
-            {me.chats.map((chat) => (
-              <button
-                key={chat.id}
-                type="button"
-                aria-pressed={chat.id === chatId}
-                onClick={() => setChatId(chat.id)}
-                className={`max-w-[12rem] shrink-0 truncate rounded-full px-4 py-1.5 text-sm font-medium ${
-                  chat.id === chatId ? "bg-accent text-accent-fg" : "bg-card text-fg"
-                }`}
-              >
-                {chatLabel(chat, me.user.id)}
-              </button>
-            ))}
+          <div className="overflow-x-auto px-4 py-3 [scrollbar-width:none]">
+            <div className="inline-flex gap-0.5 rounded-full bg-fill p-[3px]">
+              {me.chats.map((chat) => (
+                <button
+                  key={chat.id}
+                  type="button"
+                  aria-pressed={chat.id === chatId}
+                  onClick={() => setChatId(chat.id)}
+                  className="segment max-w-[12rem] shrink-0 truncate rounded-full px-4 py-[7px] text-[15px] font-semibold"
+                >
+                  {chatLabel(chat, me.user.id)}
+                </button>
+              ))}
+            </div>
           </div>
         </nav>
       )}
@@ -78,10 +66,10 @@ function Shell({ me }: { me: MeResult }) {
         className="px-4"
         style={{
           paddingTop: showChats ? "0.25rem" : "calc(var(--safe-top) + 0.75rem)",
-          paddingBottom: "calc(5.5rem + var(--safe-bottom))",
+          paddingBottom: "calc(6.5rem + var(--safe-bottom))",
         }}
       >
-        <p className="mb-3 px-1 text-sm text-hint">Hi {me.user.name}，榮勾斯揪來報到</p>
+        <p className="px-4 text-[15px] text-hint">Hi {me.user.name}，榮勾斯揪來報到</p>
         {needsChat && chatId === null ? (
           <Empty emoji="🐻" title="還沒有可以看的群組">
             先把榮勾斯揪拉進五之神群組，或是私訊他一下，這裡就會有東西了。
@@ -90,17 +78,22 @@ function Shell({ me }: { me: MeResult }) {
           <>
             <Pane active={tab === "polls"} show={visited.has("polls")}>{chatId !== null && <Polls chatId={chatId} />}</Pane>
             <Pane active={tab === "queue"} show={visited.has("queue")}><Queue /></Pane>
-            {me.retroYear !== null && <Pane active={tab === "retro"} show={visited.has("retro")}>{chatId !== null && <Retro chatId={chatId} title={chatLabel(me.chats.find((c) => c.id === chatId)!, me.user.id)} />}</Pane>}
+            {me.retroYear !== null && <Pane active={tab === "retro"} show={visited.has("retro")}>{chatId !== null && <div className="mt-3"><Retro chatId={chatId} title={chatLabel(me.chats.find((c) => c.id === chatId)!, me.user.id)} /></div>}</Pane>}
           </>
         )}
       </main>
 
       <nav
         aria-label="主選單"
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg"
-        style={{ paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}
+        className="fixed inset-x-0 bottom-0 z-20 px-3"
+        style={{ paddingBottom: "calc(var(--safe-bottom) + 0.5rem)", paddingLeft: "calc(var(--safe-left) + 0.75rem)", paddingRight: "calc(var(--safe-right) + 0.75rem)" }}
       >
-        <div className="mx-auto flex max-w-xl">
+        <div className="glass relative mx-auto flex max-w-md rounded-full p-1.5">
+          <span
+            aria-hidden="true"
+            className="tab-capsule absolute inset-y-1.5 left-1.5 rounded-full"
+            style={{ width: `calc((100% - 0.75rem) / ${tabs.length})`, transform: `translateX(${activeIndex * 100}%)` }}
+          />
           {tabs.map((t) => {
             const active = t.id === tab;
             return (
@@ -109,10 +102,10 @@ function Shell({ me }: { me: MeResult }) {
                 type="button"
                 aria-current={active ? "page" : undefined}
                 onClick={() => setTab(t.id)}
-                className="flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium"
-                style={{ color: active ? "var(--accent)" : "var(--hint)" }}
+                className="relative flex flex-1 flex-col items-center gap-0.5 rounded-full py-1.5 text-[11px] font-semibold"
+                style={{ color: active ? "var(--accent)" : "var(--fg)" }}
               >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   {ICONS[t.id]}
                 </svg>
                 {t.label}
