@@ -31,8 +31,8 @@
   --up: #2fb84f;
   --down: #ff3b30;
   --danger: #ff3b30;
-  --icon-from: #45c8ff;
-  --icon-to: #0a84ff;
+  --icon-from: #ff86c4;
+  --icon-to: #ff4fa0;
   --glass: color-mix(in srgb, #ffffff 84%, transparent);
   --glass-edge: color-mix(in srgb, #ffffff 80%, transparent);
   --shadow: 0 8px 28px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
@@ -57,8 +57,8 @@
   --up: #30d158;
   --down: #ff453a;
   --danger: #ff453a;
-  --icon-from: #3bb8ff;
-  --icon-to: #0a6cff;
+  --icon-from: #ff7ab9;
+  --icon-to: #ec3c8b;
   --glass: color-mix(in srgb, #1c1c1e 84%, transparent);
   --glass-edge: color-mix(in srgb, #ffffff 12%, transparent);
   --shadow: 0 8px 28px rgb(0 0 0 / 0.5);
@@ -117,6 +117,10 @@ button,
   background: linear-gradient(160deg, var(--icon-from), var(--icon-to));
   color: #ffffff;
 }
+/* Emoji carry their own colors; a neutral plate keeps them from fighting the accent. */
+.icon-bubble-soft {
+  background: var(--fill);
+}
 
 .row:not(:first-child) > .row-body {
   border-top: 0.5px solid var(--line);
@@ -138,7 +142,7 @@ button,
 }
 .chip {
   color: var(--fg);
-  background: color-mix(in srgb, var(--icon-to) 13%, var(--card));
+  background: var(--fill);
 }
 .pill-neutral {
   color: var(--hint);

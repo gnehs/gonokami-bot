@@ -48,11 +48,19 @@ export function Group({ children, className = "" }: { children: ReactNode; class
   return <div className={`overflow-hidden rounded-[22px] bg-card ${className}`}>{children}</div>;
 }
 
-export function IconBubble({ children, size = 40 }: { children: ReactNode; size?: number }) {
+export function IconBubble({
+  children,
+  size = 40,
+  tone = "accent",
+}: {
+  children: ReactNode;
+  size?: number;
+  tone?: "accent" | "soft";
+}) {
   return (
     <span
       aria-hidden="true"
-      className="icon-bubble flex shrink-0 items-center justify-center rounded-full font-semibold"
+      className={`${tone === "soft" ? "icon-bubble-soft" : "icon-bubble"} flex shrink-0 items-center justify-center rounded-full font-semibold`}
       style={{ width: size, height: size, fontSize: size * 0.5 }}
     >
       {children}

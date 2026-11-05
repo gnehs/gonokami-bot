@@ -133,7 +133,7 @@ function Greeting({ name, openCount }: { name: string; openCount: number | null 
 
 function PollIcon({ poll, size }: { poll: PollSummary; size?: number }) {
   return (
-    <IconBubble size={size}>
+    <IconBubble size={size} tone={poll.kind === "ramen" ? "soft" : "accent"}>
       {poll.kind === "ramen" ? (
         "🍜"
       ) : (
