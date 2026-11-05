@@ -37,10 +37,16 @@ async function findSubscription(chatId: number, userId: number): Promise<Subscri
     .get();
 }
 
-async function deleteSubscription(sub: Subscription) {
-  await db
+/** Matching the message too means a subscription replaced meanwhile by /number is left alone. */
+async function deleteSubscription(sub: Subscription): Promise<boolean> {
+  const { rowsAffected } = await db
     .delete(subscriptions)
-    .where(and(eq(subscriptions.chatId, sub.chatId), eq(subscriptions.userId, sub.userId)));
+    .where(
+      eq(subscriptions.chatId, sub.chatId),
+      eq(subscriptions.userId, sub.userId),
+      eq(subscriptions.messageId, sub.messageId)
+    );
+  return rowsAffected > 0;
 }
 
 async function predictionLine(reading: QueueReading, target: number): Promise<string> {
@@ -96,14 +102,18 @@ export async function handleNumberCommand(message: Message, arg: string | undefi
   }
   text += await predictionLine(reading, target);
   const sent = await reply(message, text, { reply_markup: cancelMarkup(from.id) });
-  await db.insert(subscriptions).values({
+  const row = {
     chatId: message.chat.id,
     userId: from.id,
     firstName: from.first_name,
     targetNumber: target,
     messageId: sent.message_id,
     createdAt: Date.now(),
-  });
+  };
+  await db
+    .insert(subscriptions)
+    .values(row)
+    .onConflictDoUpdate({ target: [subscriptions.chatId, subscriptions.userId], set: row });
 }
 
 export async function handleCancelNumber(query: CallbackQuery, ownerId: number) {
@@ -128,12 +138,13 @@ export async function notifySubscribers(reading: QueueReading) {
   const subs: Subscription[] = await db.select().from(subscriptions).all();
   let notified = 0;
   for (const sub of subs) {
-    const reached = reading.number >= sub.targetNumber;
+    // Expiry is checked first: overnight, the board still shows last night's final number.
     const expired = Date.now() - sub.createdAt > SUBSCRIPTION_TTL_MS;
+    const reached = !expired && reading.number >= sub.targetNumber;
     if (!reached && !expired) continue;
 
-    // Delete first: a crash after sending must not announce the same number twice next minute.
-    await deleteSubscription(sub);
+    // Whoever deletes the row sends the message, so overlapping ticks never announce twice.
+    if (!(await deleteSubscription(sub))) continue;
     try {
       await api.sendMessage({
         chat_id: sub.chatId,

@@ -27,7 +27,8 @@ export async function rollupFinishedDays(now: number) {
     const score = scoreDay(historyBefore(model, day.date), day);
     if (score) scores.push(score);
   }
-  await setKv("dayScores", scores.slice(-KEPT_SCORES));
+  const byDate = new Map(scores.map((score) => [score.date, score]));
+  await setKv("dayScores", [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-KEPT_SCORES));
   await setKv("rolledUntil", today);
   return timingDays.map((day) => day.date);
 }

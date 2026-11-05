@@ -64,14 +64,23 @@ const votesFile = JSON.parse(fs.readFileSync(path.join(botDir, "votes.json"), "u
 };
 
 // Polls never stored a creation time; their last update (usually the close, minutes later) stands in.
-// Polls in private chats were the bot owner testing, and polls nobody answered say nothing.
+// Only group polls are kept: a private-chat poll has a single voter and nothing to compare.
+const answered = (poll: LegacyPoll) =>
+  poll.options.some((option) => option.voter_count > 0) ||
+  Object.values(poll.votes ?? {}).some((optionIds) => optionIds.length > 0);
 const legacyPolls = Object.entries(votesFile.polls).filter(
   (entry): entry is [string, LegacyPoll & { chat_id: number; update_time: number }] =>
-    typeof entry[1].chat_id === "number" &&
-    entry[1].chat_id < 0 &&
-    Boolean(entry[1].update_time) &&
-    entry[1].options.some((option) => option.voter_count > 0)
+    typeof entry[1].chat_id === "number" && entry[1].chat_id < 0 && Boolean(entry[1].update_time) && answered(entry[1])
 );
+
+// The old bot wrote option counts only when a poll was stopped, so polls left open have
+// zero counts even though every answer was logged; rebuild those counts from the answers.
+function optionCounts(poll: LegacyPoll): number[] {
+  const counts = poll.options.map((option) => option.voter_count);
+  if (counts.some((count) => count > 0)) return counts;
+  for (const optionIds of Object.values(poll.votes ?? {})) for (const id of optionIds) counts[id] += 1;
+  return counts;
+}
 const polls = legacyPolls.map(([id, poll]) => ({
   id,
   chatId: poll.chat_id,
@@ -79,7 +88,7 @@ const polls = legacyPolls.map(([id, poll]) => ({
   creatorId: poll.user_id ?? null,
   kind: detectKind(poll.options),
   question: poll.question,
-  options: poll.options.map((option) => ({ text: option.text, voterCount: option.voter_count })),
+  options: poll.options.map((option, i) => ({ text: option.text, voterCount: optionCounts(poll)[i] })),
   isClosed: poll.is_closed,
   createdAt: poll.update_time,
   updatedAt: poll.update_time,

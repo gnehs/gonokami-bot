@@ -1,4 +1,4 @@
-import { db, api, fetch } from "sdk";
+import { db, api, fetch, BotApiError } from "sdk";
 import { and, eq, gte, sql } from "sdk/db";
 import { chats, kv, memberships, observations, queueDays, users } from "../schema.ts";
 import { buildDay, buildModel, predictWaitMinutes, type Model, type ModelDay } from "./predict.ts";
@@ -90,11 +90,16 @@ export async function canView(chatId: number, userId: number): Promise<boolean> 
     .get();
   if (cached && Date.now() - cached.checkedAt < MEMBERSHIP_TTL_MS) return cached.isMember;
 
-  let isMember = false;
+  let isMember: boolean;
   try {
     isMember = isMemberStatus(await api.getChatMember({ chat_id: chatId, user_id: userId }));
   } catch (error) {
-    console.warn("getChatMember failed", { chatId, userId, error: String(error) });
+    // A 400 means Telegram knows no such member or chat; anything else is transient and not cached.
+    if (!(error instanceof BotApiError && error.code === 400)) {
+      console.warn("getChatMember failed", { chatId, userId, error: String(error) });
+      return cached?.isMember ?? false;
+    }
+    isMember = false;
   }
   const row = { chatId, userId, isMember, checkedAt: Date.now() };
   await db

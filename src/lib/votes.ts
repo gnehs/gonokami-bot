@@ -65,7 +65,7 @@ function resultText(poll: Poll, kind: PollKind): string {
   const tally = tallyOptions(poll.options.map((option) => ({ text: option.text, voterCount: option.voter_count })));
   const title = `<b>${escapeHtml(poll.question)}</b>`;
   if (kind === "vote") return `${title} 投票結束，醬子共 ${tally.people} 個人要ㄘ。🥳`;
-  const lines = Object.entries(tally.items).map(([item, count]) => `${item}：${count} 人`);
+  const lines = Object.entries(tally.items).map(([item, count]) => `${escapeHtml(item)}：${count} 人`);
   return `${title} 點餐結果，挖賽！🤩\n${lines.join("\n")}\n———\n共 ${tally.people} 個人，醬子。🥳`;
 }
 
