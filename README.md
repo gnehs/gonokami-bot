@@ -6,93 +6,97 @@
 
 哼嗯，這是偶，國王熊熊榮勾斯揪的 Telegram Bot。怕的是他。
 
-這個 Bot 很ㄅㄧㄤ ˋ，可以幫你做很多事，不像那些 LKK 的 Bot，很遜。
+偶現在住在 [Telegram Serverless](https://core.telegram.org/bots/serverless)，不用養主機，很ㄅㄧㄤˋ吧。
 
-## ✨ Kira Kira 的功能
+## ✨ 功能
 
-- **/number [號碼]**: 查詢五之神拉麵的目前叫號，你也可以直接訂閱，偶會幫你盯著，叫到再跟你說。很 Hito 吧。
-- **/vote [主題]**: 肚子餓了？用這個指令來揪團投票，看大家要ㄘ什麼。
-- **/voteramen [主題]**: 限定拉麵點餐專用，直接統計好誰要單點、誰要加蛋、誰要超值。哇賽！
+- **/number [號碼]**：查五之神目前叫號。帶號碼就訂閱，叫到會在同一個聊天室喊你，順便告訴你預估幾點叫到。
+- **/vote [主題] [不吃選項]**：揪團投票，看大家要不要ㄘ。
+- **/voteramen [主題] [不吃選項]**：限定拉麵點餐，統計單點、加蛋、超值各幾份。
+- **/app**：打開 Mini App，看投票紀錄、叫號預測和模型準確度。
+- **年度回顧**：每年十二月到一月，Mini App 會出現群組的年度回顧，看誰最常揪、大家最愛點什麼。
 
-## 🛠️ 安裝與設定
+Mini App 只會顯示你目前還在的群組。每次讀取群組資料前，偶都會用 `getChatMember` 確認身分（結果快取十分鐘）。
 
-想讓偶為你服務？哼嗯，算你識貨。照著下面做，不要兩光。
+## 🧱 架構
 
-1. **把偶的城堡複製回去：**
+| 位置 | 內容 |
+| --- | --- |
+| `src/` | Bot 程式碼（TypeScript）。`pnpm build:cloud` 會編譯到 `tgcloud/`，也就是平台實際執行的 JS 模組。 |
+| `src/handlers/` | Telegram update handler，檔名就是 update 類型，例如 `message`、`poll_answer`。 |
+| `src/endpoints/` | Mini App 呼叫的 API。`tick` 和 `importHistory` 只接受 `tgcloud run`，Mini App 呼叫會被拒絕。 |
+| `src/lib/` | 共用邏輯。`predict`、`poll`、`retro`、`queue`、`time` 不依賴 SDK，可直接用 `node --test` 測。 |
+| `web/` | Mini App 前端，build 到 `dist/`，由 tgcloud 一起部署。 |
+| `worker/` | Cloudflare Worker，營業時間（10:00–22:59）每分鐘觸發一次 `endpoints/tick`。 |
+| `scripts/` | 歷史資料匯入，以及打包 Worker 用的模組原始碼。 |
+
+Telegram Serverless 沒有排程功能，所以由 Worker 定時呼叫 tgcloud 的 `/run` API。`/run` 只執行請求裡附上的原始碼、不讀已部署的版本，所以 Worker 部署時會把 `tgcloud/` 的編譯結果一起打包進去。每次改完 bot 都要用 `pnpm deploy` 一起部署，Worker 才不會跑舊版程式。
+
+### 叫號預測
+
+每分鐘的 tick 會讀叫號看板，並記下看板自己回報的換號時間（`UpdDate`）。所以就算一分鐘才看一次，時間點仍然準確。每天收攤後，當天的叫號曲線會併入模型，並跟前幾天的歷史比對、算出準確度。Mini App 顯示的就是最近 60 個營業日的結果。
+
+預測時，今天的曲線如果已經涵蓋目前號碼，就直接沿用今天的速度。否則用歷史曲線加權取中位數，同星期、同類型營業日（五六日限定）、同時段的權重比較高。
+
+## 🛠️ 開發
+
+需要 Node.js 22.18 以上（直接執行 `.ts`）和 pnpm。
+
+```bash
+pnpm install
+pnpm test        # 純邏輯測試
+pnpm typecheck
+pnpm dev:web     # 在一般瀏覽器開 Mini App，會用假資料
+```
+
+## 🚀 第一次部署
+
+0. 先停掉舊的 Docker bot 和 number-monitor。`tgcloud push` 會幫 bot 設定 webhook，舊版的長輪詢會跟它衝突。
+1. 在 @BotFather 開啟這個 bot 的 Serverless，到 Settings → Serverless → CLI Access 拿 access token（格式 `app<id>:<secret>`，跟 bot token 不同）。
+2. 在 repo 根目錄登入，token 會存在 git-ignored 的 `.tgcloud/`：
 
    ```bash
-   git clone https://github.com/gnehs/gonokami-bot.git
-   cd gonokami-bot
+   pnpm exec tgcloud login
    ```
 
-2. **安裝需要的東西：** 偶只用 pnpm，其他的偶看不上眼，很 SPP。
+3. 編譯並推上去，再套用資料表：
 
    ```bash
-   pnpm install
+   pnpm build && pnpm exec tgcloud push
    ```
 
-   需要 Node.js 22.18 以上，因為偶會直接執行 `.ts` 檔。
-
-3. **設定你的秘密鑰匙：** 建一個 `.env` 檔案放你的 Telegram Bot Token。AI 對話使用 OpenRouter；舊的 `OPENWEBUI_*` 變數仍會相容讀取，但新部署請用 `OPENROUTER_*`。
-
-   ```env
-   BOT_TOKEN=你的機器人Token
-   OPENROUTER_API_KEY=你的OpenRouter金鑰
-   OPENROUTER_MODEL=openai/gpt-oss-20b
-   # 可選：自訂 OpenRouter-compatible endpoint
-   # OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-   # 可選：錯誤告警收件人，逗號分隔；預設 215616188
-   # ADMIN_TELEGRAM_IDS=215616188
+   ```bash
+   pnpm exec tgcloud migrate
    ```
 
----
+4. 匯入舊 Docker 版的歷史資料。第一個參數是 number-monitor 的 CSV 資料夾，第二個是舊 bot 的 `data/` 資料夾。先用 `--dry-run` 看筆數：
 
-## 🚀 啟動偶（開發模式）
+   ```bash
+   pnpm import-history <monitor-csv-dir> <bot-data-dir> --dry-run
+   ```
 
-好了嗎？好了就啟動偶，讓大家看看偶的 je ne sais quoi。
+   匯入時會清掉不可靠的資料：只保留至少 15 次換號、時間跨度兩小時以上的營業日，並排除私訊裡的測試投票和沒人投的投票。重複執行不會產生重複資料。
 
-```bash
-pnpm start
-```
+5. 設定 Worker 的 token，然後部署 Worker：
 
-或是，如果你想讓偶一直在背景曬太陽（開發模式）：
+   ```bash
+   pnpm exec wrangler secret put TGCLOUD_TOKEN -c worker/wrangler.jsonc
+   ```
 
-```bash
-pnpm dev
-```
+   ```bash
+   pnpm deploy:worker
+   ```
 
-## 🐳 用 Docker 部署偶
+6. 在 @BotFather 把 `tgcloud push` 印出的網址設成這個 bot 的 Main Mini App，`/app` 的按鈕才打得開。
 
-覺得上面的方法很遜？哼嗯，偶也懂 Docker，怕的是他。
-
-1.  **把偶打包起來（新版 Node 會直接執行 TypeScript）:**
-
-    ```bash
-    docker build -t gonokami-bot .
-    ```
-
-2.  **讓偶開始曬太陽：**
-    記得把你的秘密鑰匙 (`BOT_TOKEN`) 傳給偶，不然偶會森七七。
-
-    ```bash
-    docker run -d --name gonokami-bot -e BOT_TOKEN="你的機器人Token" --restart always gonokami-bot
-    ```
-
-> ⚠️ 若你使用 _node:22-alpine_ / _node:24-alpine_ 等新版映像，或在啟動時看到 `Network request for 'getMe' failed!`、`ETIMEDOUT` 等訊息，很可能是壞掉的 IPv6 造成連線失敗。可以在 `docker run` 時加上一行，直接關閉 container 內的 IPv6：
+之後每次更新只要：
 
 ```bash
-docker run -d --name gonokami-bot \
-  -e BOT_TOKEN="你的機器人Token" \
-  --sysctl net.ipv6.conf.all.disable_ipv6=1 \
-  --restart always gonokami-bot
+pnpm deploy
 ```
+
+改到 `src/schema.ts` 時，`push` 只會列出待套用的變更，記得再跑一次 `pnpm exec tgcloud migrate`。
 
 ---
 
 _Zzz ～怕的是他～ Zzz ～_
-
-## 🏭 Production 啟動
-
-```bash
-NODE_ENV=production pnpm start
-```

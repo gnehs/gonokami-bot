@@ -36,9 +36,14 @@ export async function readQueue(): Promise<QueueReading | null> {
   const cached = await getKv<QueueReading & { fetchedAt: number }>("queue");
   if (cached && Date.now() - cached.fetchedAt < QUEUE_CACHE_MS) return cached;
 
-  const res = await fetch(QUEUE_URL);
-  if (!res.ok) throw new Error(`queue board answered ${res.status}`);
-  const reading = parseQueueResponse(await res.json());
+  let reading: QueueReading | null;
+  try {
+    const res = await fetch(QUEUE_URL);
+    reading = res.ok ? parseQueueResponse(await res.json()) : null;
+  } catch (error) {
+    console.warn("queue board unreachable", String(error));
+    reading = null;
+  }
   if (!reading) return null;
 
   await db
