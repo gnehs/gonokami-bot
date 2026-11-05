@@ -27,7 +27,7 @@ Mini App 只會顯示你目前還在的群組。每次讀取群組資料前，�
 | `src/endpoints/` | Mini App 呼叫的 API。`tick` 和 `importHistory` 只接受 `tgcloud run`，Mini App 呼叫會被拒絕。 |
 | `src/lib/` | 共用邏輯。`predict`、`poll`、`retro`、`queue`、`time` 不依賴 SDK，可直接用 `node --test` 測。 |
 | `web/` | Mini App 前端，build 到 `dist/`，由 tgcloud 一起部署。 |
-| `worker/` | Cloudflare Worker，營業時間（10:00–22:59）每分鐘觸發一次 `endpoints/tick`。 |
+| `worker/` | Cloudflare Worker，週五到週日 10:00–21:59 每分鐘觸發一次 `endpoints/tick`。五之神只在這幾天用叫號看板。 |
 | `scripts/` | 歷史資料匯入，以及打包 Worker 用的模組原始碼。 |
 
 Telegram Serverless 沒有排程功能，所以由 Worker 定時呼叫 tgcloud 的 `/run` API。`/run` 只執行請求裡附上的原始碼、不讀已部署的版本，所以 Worker 部署時會把 `tgcloud/` 的編譯結果一起打包進去。每次改完 bot 都要用 `pnpm deploy` 一起部署，Worker 才不會跑舊版程式。

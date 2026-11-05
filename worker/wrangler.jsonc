@@ -1,9 +1,12 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "gonokami-tick",
+  "account_id": "3f9286ee807ce2c152ed6743a85e9805",
   "main": "index.ts",
   "compatibility_date": "2026-10-01",
+  "workers_dev": false,
   "observability": { "enabled": true },
-  // Every minute from 10:00 to 22:59 Asia/Taipei (UTC+8), the shop's opening hours.
-  "triggers": { "crons": ["* 2-14 * * *"] }
+  // Every minute 10:00–21:59 Asia/Taipei (02:00–13:59 UTC, same calendar day), Friday to Sunday:
+  // the shop only runs its queue board on those days, and the last call on record is 20:39.
+  "triggers": { "crons": ["* 2-13 * * FRI,SAT,SUN"] }
 }
