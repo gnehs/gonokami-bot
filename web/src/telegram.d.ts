@@ -8,6 +8,7 @@ interface TelegramWebApp {
   isVersionAtLeast(version: string): boolean;
   setHeaderColor(color: string): void;
   setBackgroundColor(color: string): void;
+  disableVerticalSwipes(): void;
   onEvent(event: "themeChanged", handler: () => void): void;
   BackButton: {
     show(): void;

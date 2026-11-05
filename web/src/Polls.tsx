@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { PollSummary } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
 import { formatDateTime } from "./format.ts";
+import { useSwipeBack } from "./gestures.ts";
 import { nativeBackButton } from "./theme.ts";
 import { Bear, Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
@@ -165,14 +166,17 @@ function PollDetail({ poll, open, onClose }: { poll: PollSummary; open: boolean;
     };
   }, [native, open, onClose]);
 
+  const swipe = useSwipeBack<HTMLDivElement>(onClose);
   const hasItems = Object.values(poll.tally.items).some((count) => count > 0);
   return (
     <div
+      ref={swipe.ref}
+      {...swipe.handlers}
       role="dialog"
       aria-modal="true"
       aria-label={poll.question}
       data-open={open}
-      className="sheet fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-bg"
+      className="sheet fixed inset-0 z-40 touch-pan-y overflow-y-auto overscroll-contain bg-bg"
     >
       <div
         className="mx-auto max-w-xl px-4"

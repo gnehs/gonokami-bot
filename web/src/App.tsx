@@ -4,6 +4,7 @@ import { call } from "./api.ts";
 import { Polls } from "./Polls.tsx";
 import { Queue } from "./Queue.tsx";
 import { Retro } from "./Retro.tsx";
+import { useSlideToSelectTab } from "./gestures.ts";
 import { Empty, ErrorView, Spinner, useRemote } from "./ui.tsx";
 
 type Tab = "polls" | "queue" | "retro";
@@ -37,6 +38,7 @@ function Shell({ me }: { me: MeResult }) {
     ...(me.retroYear !== null ? [{ id: "retro" as const, label: "年度回顧" }] : []),
   ];
   const activeIndex = tabs.findIndex((t) => t.id === tab);
+  const slide = useSlideToSelectTab<HTMLDivElement>(activeIndex, (index) => setTab(tabs[index].id));
   const needsChat = tab !== "queue";
   const showChats = needsChat && me.chats.length > 0;
 
@@ -87,9 +89,10 @@ function Shell({ me }: { me: MeResult }) {
         className="fixed inset-x-0 bottom-0 z-20 px-3"
         style={{ paddingBottom: "calc(var(--safe-bottom) + 0.5rem)", paddingLeft: "calc(var(--safe-left) + 0.75rem)", paddingRight: "calc(var(--safe-right) + 0.75rem)" }}
       >
-        <div className="glass relative mx-auto flex max-w-md rounded-full p-1.5">
+        <div ref={slide.ref} {...slide.handlers} className="glass relative mx-auto flex max-w-md touch-pan-y select-none rounded-full p-1.5">
           <span
             aria-hidden="true"
+            data-slide-indicator=""
             className="tab-capsule absolute inset-y-1.5 left-1.5 rounded-full"
             style={{ width: `calc((100% - 0.75rem) / ${tabs.length})`, transform: `translateX(${activeIndex * 100}%)` }}
           />

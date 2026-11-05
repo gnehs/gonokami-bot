@@ -20,6 +20,8 @@ export function syncTheme() {
   };
 
   apply();
+  // Telegram closes a Mini App on a downward swipe, which would fight scrolling and the swipe-back page.
+  if (inTelegram && webApp!.isVersionAtLeast("7.7")) webApp!.disableVerticalSwipes();
   if (inTelegram) webApp!.onEvent("themeChanged", apply);
   else media.addEventListener("change", apply);
 }

@@ -171,6 +171,8 @@ button,
 
 .sheet {
   transition: transform 340ms var(--ease-drawer);
+  /* Marks the page's edge while a swipe-back reveals the list underneath. */
+  box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
 }
 .sheet[data-open="true"] {
   transform: translateX(0);
