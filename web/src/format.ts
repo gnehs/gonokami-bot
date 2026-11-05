@@ -15,13 +15,25 @@ export function formatDate(ms: number): string {
 
 export const formatTime = (ms: number) => timeFmt.format(ms);
 
+const dayKey = (ms: number) => dayKeyFmt.format(ms);
+
+/** "2026/11/5 (四) 14:56": records outlive the year they were made in. */
 export function formatDateTime(ms: number): string {
-  return `${formatDate(ms)} ${formatTime(ms)}`;
+  const [y, m, d] = dayKey(ms).split("-").map(Number);
+  return `${y}/${m}/${d} (${weekdayLabel(new Date(Date.UTC(y, m - 1, d)).getUTCDay())}) ${formatTime(ms)}`;
 }
+
+/** "2026 年 11 月", for grouping records by month. */
+export function formatMonth(ms: number): string {
+  const [y, m] = dayKey(ms).split("-").map(Number);
+  return `${y} 年 ${m} 月`;
+}
+
+export const isToday = (ms: number) => dayKey(ms) === dayKey(Date.now());
 
 /** Today shows only the clock; any other day gets its date too. */
 export function formatPredicted(ms: number): string {
-  return dayKeyFmt.format(ms) === dayKeyFmt.format(Date.now()) ? `今天 ${formatTime(ms)}` : formatDateTime(ms);
+  return isToday(ms) ? `今天 ${formatTime(ms)}` : formatDateTime(ms);
 }
 
 export function formatMinuteOfDay(minute: number): string {

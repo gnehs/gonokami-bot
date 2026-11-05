@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PollSummary } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
-import { formatDateTime } from "./format.ts";
+import { formatDateTime, formatMonth } from "./format.ts";
 import { useSwipeBack } from "./gestures.ts";
 import { nativeBackButton } from "./theme.ts";
 import { Bear, Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
@@ -81,22 +81,24 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
   return (
     <>
       {greeting}
-      <Section title="投票歷史">
-        <Group>
-          {page.polls.map((poll) => (
-            <Row
-              key={poll.id}
-              icon={<PollIcon poll={poll} />}
-              title={poll.question}
-              subtitle={formatDateTime(poll.createdAt)}
-              footer={<ItemChips poll={poll} className="mt-2" />}
-              value={`${poll.tally.people} 人`}
-              detail={<span className={poll.isClosed ? "text-hint" : "text-up"}>{poll.isClosed ? "已結束" : "進行中"}</span>}
-              onClick={() => setDetail({ poll, open: true })}
-            />
-          ))}
-        </Group>
-      </Section>
+      {byMonth(page.polls).map(([month, polls]) => (
+        <Section key={month} title={month}>
+          <Group>
+            {polls.map((poll) => (
+              <Row
+                key={poll.id}
+                icon={<PollIcon poll={poll} />}
+                title={poll.question}
+                subtitle={formatDateTime(poll.createdAt)}
+                footer={<ItemChips poll={poll} className="mt-2" />}
+                value={`${poll.tally.people} 人`}
+                detail={<span className={poll.isClosed ? "text-hint" : "text-up"}>{poll.isClosed ? "已結束" : "進行中"}</span>}
+                onClick={() => setDetail({ poll, open: true })}
+              />
+            ))}
+          </Group>
+        </Section>
+      ))}
       {page.error && <ErrorView error={page.error} onRetry={() => load(page.nextBefore ?? undefined)} />}
       {page.loading && <Spinner />}
       {canMore && (
@@ -113,6 +115,16 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
 }
 
 /** `openCount` is null until the first page arrives, so the right side never shows a guess. */
+/** Polls arrive newest first, so each month's group stays in order as pages append. */
+function byMonth(polls: PollSummary[]): [string, PollSummary[]][] {
+  const groups = new Map<string, PollSummary[]>();
+  for (const poll of polls) {
+    const month = formatMonth(poll.createdAt);
+    groups.set(month, [...(groups.get(month) ?? []), poll]);
+  }
+  return [...groups];
+}
+
 function Greeting({ name }: { name: string }) {
   const firstName = name.trim().split(/\s+/)[0] || name;
   return (

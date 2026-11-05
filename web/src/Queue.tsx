@@ -2,7 +2,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import type { Point, QueueResult } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
 import { QueueChart } from "./Chart.tsx";
-import { formatAgo, formatPredicted } from "./format.ts";
+import { formatAgo, formatDateTime, formatPredicted, isToday } from "./format.ts";
 import { Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError, useRemote } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
 
@@ -53,9 +53,11 @@ export function Queue() {
 
   const { reading, today, prediction, accuracy, subscriptions } = data;
   const todayPace = pace(today);
+  // Outside calling days the board keeps its last number; showing it, or predicting from it, would mislead.
+  const calling = reading !== null && isToday(reading.changedAt);
   return (
     <div>
-      {reading ? (
+      {calling ? (
         <div className="pb-2 pt-8 text-center">
           <p className="text-[17px] font-semibold">目前叫到</p>
           <p className="num mt-1 text-[76px] font-bold leading-none">
@@ -72,54 +74,62 @@ export function Queue() {
           )}
         </div>
       ) : (
-        <Empty bear="sleep" title="現在沒有叫號資料">店家可能還沒開張，榮勾絲揪也在蓋被被。</Empty>
+        <Empty bear="sleep" title="今天還沒開始叫號">
+          {reading
+            ? `上次叫到 ${reading.number} 號，是 ${formatDateTime(reading.changedAt)}。開始叫號後這裡會即時更新，醬子。`
+            : "店家可能還沒開張，榮勾絲揪也在蓋被被。"}
+        </Empty>
       )}
 
-      <Section title="今天的叫號曲線">
-        <Group className="px-4 pb-3 pt-4">
-          {today.length >= 2 ? (
-            <QueueChart points={today} />
-          ) : (
-            <p className="py-6 text-center text-[15px] text-hint">今天還沒有足夠的點可以畫線，晚點再來看看。</p>
-          )}
-        </Group>
-      </Section>
+      {calling && (
+        <>
+          <Section title="今天的叫號曲線">
+            <Group className="px-4 pb-3 pt-4">
+              {today.length >= 2 ? (
+                <QueueChart points={today} />
+              ) : (
+                <p className="py-6 text-center text-[15px] text-hint">今天還沒有足夠的點可以畫線，晚點再來看看。</p>
+              )}
+            </Group>
+          </Section>
 
-      <Section title="想知道幾點輪到你？">
-        <Group>
-          <form onSubmit={submit} className="row flex items-center pl-4">
-            <span className="mr-3"><IconBubble>{TICKET}</IconBubble></span>
-            <span className="row-body flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2 mr-3">
-              <label className="min-w-0 flex-1">
-                <span className="block text-[13px] text-hint">你的號碼</span>
-                <input
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={4}
-                  enterKeyHint="go"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value.replace(/\D/g, ""))}
-                  placeholder="1001–1200"
-                  aria-label="目標號碼"
-                  className="num block w-full bg-transparent text-[20px] font-semibold text-fg outline-none placeholder:font-normal placeholder:text-soft"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={!valid || busy}
-                className="press shrink-0 rounded-full bg-accent px-5 py-2 text-[15px] font-semibold text-accent-fg disabled:bg-fill disabled:text-hint"
-              >
-                {busy ? "算算中…" : "預測"}
-              </button>
-            </span>
-          </form>
-          {prediction && (
-            <Row icon={<IconBubble>{CLOCK}</IconBubble>} title={`${prediction.target} 號`} subtitle="預計叫到" value={formatPredicted(prediction.at)} />
-          )}
-        </Group>
-        {target !== "" && !valid && target.length === 4 && <p className="mt-2 px-4 text-[13px] text-danger">號碼要在 1001 到 1200 之間喔。</p>}
-        {formError && <p className="mt-2 px-4 text-[13px] text-danger">{formError.message}</p>}
-      </Section>
+          <Section title="想知道幾點輪到你？">
+            <Group>
+              <form onSubmit={submit} className="row flex items-center pl-4">
+                <span className="mr-3"><IconBubble>{TICKET}</IconBubble></span>
+                <span className="row-body flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2 mr-3">
+                  <label className="min-w-0 flex-1">
+                    <span className="block text-[13px] text-hint">你的號碼</span>
+                    <input
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={4}
+                      enterKeyHint="go"
+                      value={target}
+                      onChange={(e) => setTarget(e.target.value.replace(/\D/g, ""))}
+                      placeholder="1001–1200"
+                      aria-label="目標號碼"
+                      className="num block w-full bg-transparent text-[20px] font-semibold text-fg outline-none placeholder:font-normal placeholder:text-soft"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={!valid || busy}
+                    className="press shrink-0 rounded-full bg-accent px-5 py-2 text-[15px] font-semibold text-accent-fg disabled:bg-fill disabled:text-hint"
+                  >
+                    {busy ? "算算中…" : "預測"}
+                  </button>
+                </span>
+              </form>
+              {prediction && (
+                <Row icon={<IconBubble>{CLOCK}</IconBubble>} title={`${prediction.target} 號`} subtitle="預計叫到" value={formatPredicted(prediction.at)} />
+              )}
+            </Group>
+            {target !== "" && !valid && target.length === 4 && <p className="mt-2 px-4 text-[13px] text-danger">號碼要在 1001 到 1200 之間喔。</p>}
+            {formError && <p className="mt-2 px-4 text-[13px] text-danger">{formError.message}</p>}
+          </Section>
+        </>
+      )}
 
       <Section title="我訂閱的號碼">
         {subscriptions.length === 0 ? (
@@ -134,8 +144,8 @@ export function Queue() {
                 icon={<IconBubble>{BELL}</IconBubble>}
                 title={`${sub.targetNumber} 號`}
                 subtitle={sub.chatTitle}
-                value={sub.predictedAt ? formatPredicted(sub.predictedAt) : "—"}
-                detail={<span className="text-hint">{sub.predictedAt ? "預計叫到" : "還算不出來"}</span>}
+                value={calling && sub.predictedAt ? formatPredicted(sub.predictedAt) : "—"}
+                detail={<span className="text-hint">{!calling ? "等開始叫號" : sub.predictedAt ? "預計叫到" : "還算不出來"}</span>}
               />
             ))}
           </Group>
