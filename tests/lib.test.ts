@@ -5,6 +5,7 @@ import { BYE_OPTIONS, detectKind, parseOption, tallyOptions, tallyVoter } from "
 import { buildChatRetro, retroYear } from "../src/lib/retro.ts";
 import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
 import { formatClock, taipeiParts } from "../src/lib/time.ts";
+import { toBase64 } from "../src/lib/base64.ts";
 
 const at = (date: string, clock: string) => Date.parse(`${date}T${clock}:00+08:00`);
 
@@ -117,4 +118,11 @@ test("queue response picks the newest record and its change time", () => {
 test("every bye option counts as nobody", () => {
   for (const text of BYE_OPTIONS) assert.deepEqual(parseOption(text), { people: 0, item: null }, text);
   assert.ok(BYE_OPTIONS.every((text) => text.length <= 100), "Telegram caps poll options at 100 characters");
+});
+
+test("base64 matches Node's encoder for every padding length", () => {
+  for (const text of ["", "f", "fo", "foo", "foob", "fooba", "foobar", "拉麵"]) {
+    const bytes = new TextEncoder().encode(text);
+    assert.equal(toBase64(bytes), Buffer.from(bytes).toString("base64"), text);
+  }
 });

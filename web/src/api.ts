@@ -1,4 +1,4 @@
-import type { MeResult, PollsResult, QueueResult, RetroResult } from "../../src/lib/api-types.ts";
+import type { Avatar, MeResult, PollsResult, QueueResult, RetroResult } from "../../src/lib/api-types.ts";
 
 export class ApiError extends Error {
   constructor(
@@ -14,6 +14,7 @@ export type Endpoints = {
   polls: { input: { chatId: number; before?: number }; result: PollsResult };
   queue: { input: { target?: string }; result: QueueResult };
   retro: { input: { chatId: number }; result: RetroResult };
+  avatars: { input: { chatId: number; userIds: number[] }; result: Avatar[] };
 };
 
 export async function call<N extends keyof Endpoints>(name: N, input: Endpoints[N]["input"]): Promise<Endpoints[N]["result"]> {

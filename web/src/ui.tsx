@@ -192,3 +192,47 @@ export function ErrorView({ error, onRetry }: { error: ApiError; onRetry?: () =>
     </Empty>
   );
 }
+
+/** A profile photo, or the name's first character on the accent plate when there is none. */
+export function Avatar({ name, photo, size = 40 }: { name: string; photo: string | null | undefined; size?: number }) {
+  if (!photo) return <IconBubble size={size}>{Array.from(name)[0] ?? "?"}</IconBubble>;
+  return (
+    <img
+      src={photo}
+      alt=""
+      width={size}
+      height={size}
+      draggable={false}
+      className="shrink-0 select-none rounded-full bg-fill object-cover"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+/** Up to `max` overlapping faces, each ringed in the card color so the overlap reads. */
+export function AvatarStack({
+  people,
+  photoOf,
+  max = 3,
+  size = 22,
+}: {
+  people: { userId: number; name: string }[];
+  photoOf: (userId: number) => string | null | undefined;
+  max?: number;
+  size?: number;
+}) {
+  if (people.length === 0) return null;
+  return (
+    <span className="inline-flex items-center" aria-hidden="true">
+      {people.slice(0, max).map((person, index) => (
+        <span
+          key={person.userId}
+          className="rounded-full ring-2 ring-[var(--card)]"
+          style={{ marginLeft: index ? -size * 0.32 : 0, zIndex: max - index }}
+        >
+          <Avatar name={person.name} photo={photoOf(person.userId)} size={size} />
+        </span>
+      ))}
+    </span>
+  );
+}

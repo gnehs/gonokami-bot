@@ -23,6 +23,12 @@ export function formatDateTime(ms: number): string {
   return `${y}/${m}/${d} (${weekdayLabel(new Date(Date.UTC(y, m - 1, d)).getUTCDay())}) ${formatTime(ms)}`;
 }
 
+/** "2026/11/5 14:56", for list rows where the weekday would crowd out the rest. */
+export function formatShortDateTime(ms: number): string {
+  const [y, m, d] = dayKey(ms).split("-").map(Number);
+  return `${y}/${m}/${d} ${formatTime(ms)}`;
+}
+
 /** "2026 年 11 月", for grouping records by month. */
 export function formatMonth(ms: number): string {
   const [y, m] = dayKey(ms).split("-").map(Number);

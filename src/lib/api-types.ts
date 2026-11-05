@@ -37,4 +37,7 @@ export type QueueResult = {
 
 export type RetroResult = { chat: ChatRetro; queue: QueueRetro };
 
+/** A voter's Telegram profile photo as a data URL, or null when there is none to show. */
+export type Avatar = { userId: number; photo: string | null };
+
 export type { Accuracy, ChatRetro, Point, QueueReading, QueueRetro, Tally };

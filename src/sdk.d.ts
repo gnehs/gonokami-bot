@@ -38,7 +38,9 @@ declare module "sdk/db" {
 
 declare module "sdk" {
   export { default as db } from "sdk/db";
-  export const api: Record<string, (params?: Record<string, unknown>) => Promise<any>>;
+  export const api: Record<string, (params?: Record<string, unknown>) => Promise<any>> & {
+    getFileContent(fileId: string): Promise<Uint8Array>;
+  };
   export function fetch(
     url: string,
     init?: { method?: string; headers?: Record<string, string>; body?: unknown }

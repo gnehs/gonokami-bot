@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PollSummary } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
-import { formatDateTime, formatMonth } from "./format.ts";
+import { formatDateTime, formatMonth, formatShortDateTime } from "./format.ts";
 import { useSwipeBack } from "./gestures.ts";
 import { nativeBackButton } from "./theme.ts";
-import { Bear, Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
+import { useAvatars } from "./avatars.ts";
+import { Avatar, AvatarStack, Bear, Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
 
 type Page = { polls: PollSummary[]; nextBefore: number | null; error: ApiError | null; loading: boolean };
@@ -64,6 +65,7 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
     return () => observer.disconnect();
   }, [canMore, page.nextBefore, load]);
 
+  const photoOf = useAvatars(chatId, [...new Set(page.polls.flatMap((poll) => poll.voters.slice(0, 3).map((v) => v.userId)))]);
   const greeting = <Greeting name={userName} />;
   if (page.error && page.polls.length === 0) return <>{greeting}<ErrorView error={page.error} onRetry={() => load()} /></>;
   if (page.loading && page.polls.length === 0) return <>{greeting}<Spinner /></>;
@@ -89,9 +91,14 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
                 key={poll.id}
                 icon={<PollIcon poll={poll} />}
                 title={poll.question}
-                subtitle={formatDateTime(poll.createdAt)}
+                subtitle={formatShortDateTime(poll.createdAt)}
                 footer={<ItemChips poll={poll} className="mt-2" />}
-                value={`${poll.tally.people} 人`}
+                value={
+                  <span className="inline-flex items-center gap-1.5">
+                    <AvatarStack people={poll.voters} photoOf={photoOf} />
+                    {poll.tally.people} 人
+                  </span>
+                }
                 detail={<span className={poll.isClosed ? "text-hint" : "text-up"}>{poll.isClosed ? "已結束" : "進行中"}</span>}
                 onClick={() => setDetail({ poll, open: true })}
               />
@@ -109,7 +116,7 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
         </div>
       )}
       {page.nextBefore === null && !page.loading && <p className="py-6 text-center text-[15px] text-hint">已經到底囉，再翻就是考古了</p>}
-      {detail && <PollDetail poll={detail.poll} open={detail.open} onClose={closeDetail} />}
+      {detail && <PollDetail chatId={chatId} poll={detail.poll} open={detail.open} onClose={closeDetail} />}
     </>
   );
 }
@@ -166,7 +173,8 @@ function ItemChips({ poll, className = "" }: { poll: PollSummary; className?: st
   );
 }
 
-function PollDetail({ poll, open, onClose }: { poll: PollSummary; open: boolean; onClose: () => void }) {
+function PollDetail({ chatId, poll, open, onClose }: { chatId: number; poll: PollSummary; open: boolean; onClose: () => void }) {
+  const photoOf = useAvatars(chatId, poll.voters.map((voter) => voter.userId));
   const native = nativeBackButton();
   useEffect(() => {
     if (!native || !open) return;
@@ -240,7 +248,7 @@ function PollDetail({ poll, open, onClose }: { poll: PollSummary; open: boolean;
               {poll.voters.map((voter) => (
                 <Row
                   key={voter.userId}
-                  icon={<IconBubble>{Array.from(voter.name)[0]}</IconBubble>}
+                  icon={<Avatar name={voter.name} photo={photoOf(voter.userId)} />}
                   title={voter.name}
                   subtitle={voter.choices.join("、")}
                   value={`${voter.people} 人`}

@@ -171,6 +171,13 @@ export function mockCall<N extends keyof Endpoints>(name: N, input: Endpoints[N]
     }
     case "queue":
       return delay<QueueResult>(() => queueFor((input as Endpoints["queue"]["input"]).target));
+    case "avatars": {
+      const { chatId, userIds } = input as Endpoints["avatars"]["input"];
+      return delay<Endpoints["avatars"]["result"]>(() => {
+        assertViewable(chatId);
+        return userIds.map((userId) => ({ userId, photo: userId % 2 ? null : fakePhoto(userId) }));
+      });
+    }
     case "retro": {
       const { chatId } = input as Endpoints["retro"]["input"];
       return delay<RetroResult>(() => {
@@ -188,4 +195,10 @@ export function mockCall<N extends keyof Endpoints>(name: N, input: Endpoints[N]
       });
     }
   }
+}
+
+function fakePhoto(seed: number): string {
+  const hue = (seed * 47) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="hsl(${hue} 55% 62%)"/><circle cx="20" cy="16" r="7" fill="hsl(${hue} 40% 92%)"/><path d="M7 38c2-8 7-12 13-12s11 4 13 12z" fill="hsl(${hue} 40% 92%)"/></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }

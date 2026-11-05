@@ -93,3 +93,11 @@ export const kv = table("kv", {
   value: json("value").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
+
+// Telegram profile photos, smallest size, cached so each person is fetched at most weekly.
+export const avatars = table("avatars", {
+  userId: integer("user_id").primaryKey(),
+  fileUniqueId: text("file_unique_id"),
+  photo: text("photo"),
+  checkedAt: integer("checked_at").notNull(),
+});
