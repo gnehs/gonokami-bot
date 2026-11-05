@@ -69,14 +69,13 @@ function Shell({ me }: { me: MeResult }) {
           paddingBottom: "calc(6.5rem + var(--safe-bottom))",
         }}
       >
-        <p className="px-4 text-[15px] text-hint">Hi {me.user.name}，榮勾斯揪來報到</p>
         {needsChat && chatId === null ? (
-          <Empty emoji="🐻" title="還沒有可以看的群組">
+          <Empty bear="hello" title="還沒有可以看的群組">
             先把榮勾斯揪拉進五之神群組，或是私訊他一下，這裡就會有東西了。
           </Empty>
         ) : (
           <>
-            <Pane active={tab === "polls"} show={visited.has("polls")}>{chatId !== null && <Polls chatId={chatId} />}</Pane>
+            <Pane active={tab === "polls"} show={visited.has("polls")}>{chatId !== null && <Polls chatId={chatId} userName={me.user.name} />}</Pane>
             <Pane active={tab === "queue"} show={visited.has("queue")}><Queue /></Pane>
             {me.retroYear !== null && <Pane active={tab === "retro"} show={visited.has("retro")}>{chatId !== null && <div className="mt-3"><Retro chatId={chatId} title={chatLabel(me.chats.find((c) => c.id === chatId)!, me.user.id)} /></div>}</Pane>}
           </>

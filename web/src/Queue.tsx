@@ -72,7 +72,7 @@ export function Queue() {
           )}
         </div>
       ) : (
-        <Empty emoji="😴" title="現在沒有叫號資料">店家可能還沒開張，榮勾斯揪也在蓋被被。</Empty>
+        <Empty bear="sleep" title="現在沒有叫號資料">店家可能還沒開張，榮勾斯揪也在蓋被被。</Empty>
       )}
 
       <Section title="今天的叫號曲線">

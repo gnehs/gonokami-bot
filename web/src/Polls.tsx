@@ -3,7 +3,7 @@ import type { PollSummary } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
 import { formatDateTime } from "./format.ts";
 import { nativeBackButton } from "./theme.ts";
-import { Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
+import { Bear, Chip, Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
 
 type Page = { polls: PollSummary[]; nextBefore: number | null; error: ApiError | null; loading: boolean };
@@ -12,7 +12,7 @@ type Detail = { poll: PollSummary; open: boolean } | null;
 
 const CLOSE_MS = 260;
 
-export function Polls({ chatId }: { chatId: number }) {
+export function Polls({ chatId, userName }: { chatId: number; userName: string }) {
   const [page, setPage] = useState<Page>({ polls: [], nextBefore: null, error: null, loading: true });
   const [detail, setDetail] = useState<Detail>(null);
   const generation = useRef(0);
@@ -63,18 +63,23 @@ export function Polls({ chatId }: { chatId: number }) {
     return () => observer.disconnect();
   }, [canMore, page.nextBefore, load]);
 
-  if (page.error && page.polls.length === 0) return <ErrorView error={page.error} onRetry={() => load()} />;
-  if (page.loading && page.polls.length === 0) return <Spinner />;
+  const greeting = <Greeting name={userName} openCount={page.polls.length > 0 ? page.polls.filter((p) => !p.isClosed).length : null} />;
+  if (page.error && page.polls.length === 0) return <>{greeting}<ErrorView error={page.error} onRetry={() => load()} /></>;
+  if (page.loading && page.polls.length === 0) return <>{greeting}<Spinner /></>;
   if (page.polls.length === 0) {
     return (
-      <Empty emoji="🍜" title="這裡還沒有投票">
-        醬子冷冷清清的，快在群組裡揪個午餐，怕的是他沒人跟。
-      </Empty>
+      <>
+        {greeting}
+        <Empty bear="sleep" title="這裡還沒有投票">
+          醬子冷冷清清的，快在群組裡揪個午餐，怕的是他沒人跟。
+        </Empty>
+      </>
     );
   }
 
   return (
     <>
+      {greeting}
       <Section title="投票歷史">
         <Group>
           {page.polls.map((poll) => (
@@ -103,6 +108,26 @@ export function Polls({ chatId }: { chatId: number }) {
       {page.nextBefore === null && !page.loading && <p className="py-6 text-center text-[15px] text-hint">已經到底囉，再翻就是考古了</p>}
       {detail && <PollDetail poll={detail.poll} open={detail.open} onClose={closeDetail} />}
     </>
+  );
+}
+
+/** `openCount` is null until the first page arrives, so the right side never shows a guess. */
+function Greeting({ name, openCount }: { name: string; openCount: number | null }) {
+  const firstName = name.trim().split(/\s+/)[0] || name;
+  return (
+    <Group className="mt-2 flex min-h-[80px] items-center gap-3 px-4 py-3">
+      <Bear pose="hello" size={52} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[19px] font-bold leading-snug">嗨 {firstName}</p>
+        <p className="mt-0.5 truncate text-[15px] text-hint">{openCount ? "有團在揪，怕的是你沒跟到" : "醬子冷冷的，揪個拉麵吧"}</p>
+      </div>
+      {openCount !== null && (
+        <div className="shrink-0 text-right">
+          <p className={`num text-[22px] font-bold leading-tight ${openCount ? "text-up" : ""}`}>{openCount}</p>
+          <p className="text-[13px] text-hint">進行中</p>
+        </div>
+      )}
+    </Group>
   );
 }
 

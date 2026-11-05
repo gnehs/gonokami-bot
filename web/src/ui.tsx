@@ -119,14 +119,46 @@ export function Spinner({ label = "載入中…" }: { label?: string }) {
   );
 }
 
-export function Empty({ emoji, title, children }: { emoji: string; title: string; children?: ReactNode }) {
+export type BearPose = "hello" | "sleep" | "ramen" | "confused" | "crown";
+
+/** The 榮勾斯揪 mascot; until /bear/<pose>.png exists (or if it fails), a 🐻 in a soft circle stands in. */
+export function Bear({ pose, size = 48 }: { pose: BearPose; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span aria-hidden="true" className="flex shrink-0 items-center justify-center rounded-full bg-fill" style={{ width: size, height: size, fontSize: size * 0.55 }}>
+        🐻
+      </span>
+    );
+  }
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}bear/${pose}.png`}
+      alt=""
+      width={size}
+      height={size}
+      draggable={false}
+      onError={() => setFailed(true)}
+      className="shrink-0 select-none object-contain"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+type EmptyProps = { title: string; children?: ReactNode } & ({ emoji: string } | { bear: BearPose });
+
+export function Empty(props: EmptyProps) {
   return (
     <div className="flex flex-col items-center px-8 py-14 text-center">
-      <div className="flex size-20 items-center justify-center rounded-full bg-card text-[40px]" aria-hidden="true">
-        {emoji}
-      </div>
-      <p className="mt-4 text-[20px] font-bold">{title}</p>
-      {children && <div className="mt-1.5 text-[15px] leading-relaxed text-hint">{children}</div>}
+      {"bear" in props ? (
+        <Bear pose={props.bear} size={96} />
+      ) : (
+        <div className="flex size-20 items-center justify-center rounded-full bg-card text-[40px]" aria-hidden="true">
+          {props.emoji}
+        </div>
+      )}
+      <p className="mt-4 text-[20px] font-bold">{props.title}</p>
+      {props.children && <div className="mt-1.5 text-[15px] leading-relaxed text-hint">{props.children}</div>}
     </div>
   );
 }
@@ -134,13 +166,13 @@ export function Empty({ emoji, title, children }: { emoji: string; title: string
 export function ErrorView({ error, onRetry }: { error: ApiError; onRetry?: () => void }) {
   if (error.code === "NOT_MEMBER") {
     return (
-      <Empty emoji="🚪" title="你不在這個群組裡">
+      <Empty bear="confused" title="你不在這個群組裡">
         榮勾斯揪不能偷偷給你看，先加入這個群組再來吧。
       </Empty>
     );
   }
   return (
-    <Empty emoji="🐻‍❄️" title="哎呀，出了點狀況">
+    <Empty bear="confused" title="哎呀，出了點狀況">
       <p>{error.message}</p>
       {onRetry && (
         <button type="button" onClick={onRetry} className="press mt-5 rounded-full bg-accent px-7 py-3 text-[17px] font-semibold text-accent-fg">
