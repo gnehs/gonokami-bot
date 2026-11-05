@@ -209,7 +209,7 @@ export function Avatar({ name, photo, size = 40 }: { name: string; photo: string
   );
 }
 
-/** Up to `max` overlapping faces, each ringed in the card color so the overlap reads. */
+/** Up to `max` overlapping faces, people with a photo first, each ringed in the card color so the overlap reads. */
 export function AvatarStack({
   people,
   photoOf,
@@ -222,9 +222,11 @@ export function AvatarStack({
   size?: number;
 }) {
   if (people.length === 0) return null;
+  // Stable sort: within each group the original order (most people first) is kept.
+  const shown = [...people].sort((a, b) => Number(Boolean(photoOf(b.userId))) - Number(Boolean(photoOf(a.userId)))).slice(0, max);
   return (
     <span className="inline-flex items-center" aria-hidden="true">
-      {people.slice(0, max).map((person, index) => (
+      {shown.map((person, index) => (
         <span
           key={person.userId}
           className="rounded-full ring-2 ring-[var(--card)]"

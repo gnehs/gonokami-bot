@@ -65,7 +65,8 @@ export function Polls({ chatId, userName }: { chatId: number; userName: string }
     return () => observer.disconnect();
   }, [canMore, page.nextBefore, load]);
 
-  const photoOf = useAvatars(chatId, [...new Set(page.polls.flatMap((poll) => poll.voters.slice(0, 3).map((v) => v.userId)))]);
+  // Every voter, not just the first three: the stack puts people with a photo in front.
+  const photoOf = useAvatars(chatId, [...new Set(page.polls.flatMap((poll) => poll.voters.map((v) => v.userId)))]);
   const greeting = <Greeting name={userName} />;
   if (page.error && page.polls.length === 0) return <>{greeting}<ErrorView error={page.error} onRetry={() => load()} /></>;
   if (page.loading && page.polls.length === 0) return <>{greeting}<Spinner /></>;
