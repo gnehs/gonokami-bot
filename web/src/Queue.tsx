@@ -72,7 +72,7 @@ export function Queue() {
           )}
         </div>
       ) : (
-        <Empty bear="sleep" title="現在沒有叫號資料">店家可能還沒開張，榮勾斯揪也在蓋被被。</Empty>
+        <Empty bear="sleep" title="現在沒有叫號資料">店家可能還沒開張，榮勾絲揪也在蓋被被。</Empty>
       )}
 
       <Section title="今天的叫號曲線">
@@ -124,7 +124,7 @@ export function Queue() {
       <Section title="我訂閱的號碼">
         {subscriptions.length === 0 ? (
           <Group className="px-6 py-5">
-            <p className="text-center text-[15px] text-hint">還沒有訂閱。在群組裡跟榮勾斯揪說一聲，到號前他會敲你。</p>
+            <p className="text-center text-[15px] text-hint">還沒有訂閱。在群組裡跟榮勾絲揪說一聲，到號前他會敲你。</p>
           </Group>
         ) : (
           <Group>

@@ -129,7 +129,7 @@ export function Spinner({ label = "載入中…" }: { label?: string }) {
 
 export type BearPose = "hello" | "sleep" | "ramen" | "confused" | "crown";
 
-/** The 榮勾斯揪 mascot; until /bear/<pose>.png exists (or if it fails), a 🐻 in a soft circle stands in. */
+/** The 榮勾絲揪 mascot; until /bear/<pose>.png exists (or if it fails), a 🐻 in a soft circle stands in. */
 export function Bear({ pose, size = 48 }: { pose: BearPose; size?: number }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
@@ -177,7 +177,7 @@ export function ErrorView({ error, onRetry }: { error: ApiError; onRetry?: () =>
   if (error.code === "NOT_MEMBER") {
     return (
       <Empty bear="confused" title="你不在這個群組裡">
-        榮勾斯揪不能偷偷給你看，先加入這個群組再來吧。
+        榮勾絲揪不能偷偷給你看，先加入這個群組再來吧。
       </Empty>
     );
   }

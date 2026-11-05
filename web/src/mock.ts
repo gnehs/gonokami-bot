@@ -160,7 +160,7 @@ const delay = <T>(value: () => T, ms = 350) =>
 export function mockCall<N extends keyof Endpoints>(name: N, input: Endpoints[N]["input"]): Promise<unknown> {
   switch (name) {
     case "me":
-      return delay<MeResult>(() => ({ user: { id: USER_ID, name: "榮勾斯揪" }, chats: CHATS, startChatId: CHATS[1].id, retroYear: 2026 }));
+      return delay<MeResult>(() => ({ user: { id: USER_ID, name: "榮勾絲揪" }, chats: CHATS, startChatId: CHATS[1].id, retroYear: 2026 }));
     case "polls": {
       const { chatId, before } = input as Endpoints["polls"]["input"];
       return delay<PollsResult>(() => {

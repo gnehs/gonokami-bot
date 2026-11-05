@@ -35,7 +35,7 @@ export default async function (message: Message) {
       if (message.chat.type !== "private") return;
       await api.sendMessage({
         chat_id: message.chat.id,
-        text: "安安，榮勾斯揪來了，怕的是他。有事嗎？\n想訂閱叫號可以打 /number 你的號碼，偶會幫你記著，很ㄅㄧㄤˋ吧 ✨。",
+        text: "安安，榮勾絲揪來了，怕的是他。有事嗎？\n想訂閱叫號可以打 /number 你的號碼，偶會幫你記著，很ㄅㄧㄤˋ吧 ✨。",
       });
       return sendAppButton(message);
     case "number":

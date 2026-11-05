@@ -71,7 +71,7 @@ function Shell({ me }: { me: MeResult }) {
       >
         {needsChat && chatId === null ? (
           <Empty bear="hello" title="還沒有可以看的群組">
-            先把榮勾斯揪拉進五之神群組，或是私訊他一下，這裡就會有東西了。
+            先把榮勾絲揪拉進五之神群組，或是私訊他一下，這裡就會有東西了。
           </Empty>
         ) : (
           <>

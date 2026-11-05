@@ -2,9 +2,9 @@
   <img src="assets/avater.png" width="200" style="border-radius: 32px;" />
 </div>
 
-# 👑 榮勾斯揪拉麵精靈
+# 👑 榮勾絲揪拉麵精靈
 
-哼嗯，這是偶，國王熊熊榮勾斯揪的 Telegram Bot。怕的是他。
+哼嗯，這是偶，國王熊熊榮勾絲揪的 Telegram Bot。怕的是他。
 
 偶現在住在 [Telegram Serverless](https://core.telegram.org/bots/serverless)，不用養主機，很ㄅㄧㄤˋ吧。
 

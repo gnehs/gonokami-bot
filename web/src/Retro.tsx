@@ -277,7 +277,7 @@ function DayFigure({ dayKey }: { dayKey: string }) {
 
 export function Retro({ chatId, title }: { chatId: number; title: string }) {
   const { data, error, loading, reload } = useRemote<RetroResult>(() => call("retro", { chatId }), `retro:${chatId}`);
-  if (loading) return <Spinner label="榮勾斯揪翻舊帳中…" />;
+  if (loading) return <Spinner label="榮勾絲揪翻舊帳中…" />;
   if (error) return <ErrorView error={error} onRetry={reload} />;
   const { chat, queue } = data!;
   if (chat.pollCount === 0) {
@@ -328,12 +328,12 @@ export function Retro({ chatId, title }: { chatId: number; title: string }) {
         <ol className="retro-rules">
           <li>本群今年揪了 {chat.pollCount} 次團，其中 {chat.ramenPollCount} 次是<span className="retro-nowrap">拉麵團</span>，怕的是他。</li>
           <li>共 {attendees} 位勇者出席，合計吃掉 <span className="retro-nowrap">{chat.totalPeople} 人份</span>，<span className="retro-nowrap">很ㄅㄧㄤˋ</span>。</li>
-          <li>憑本號碼牌可向榮勾斯揪領取年度回顧一份，請往下滑。</li>
+          <li>憑本號碼牌可向榮勾絲揪領取年度回顧一份，請往下滑。</li>
           <li>QQ 的朋友請自行面壁，明年記得準時出現，醬子。</li>
-          <li>本回顧數字皆為群組投票所得，如有不服請找榮勾斯揪理論。</li>
+          <li>本回顧數字皆為群組投票所得，如有不服請找榮勾絲揪理論。</li>
         </ol>
         <FakeQr seed={`${title}${year}`} />
-        <p className="retro-powered">powered by 榮勾斯揪</p>
+        <p className="retro-powered">powered by 榮勾絲揪</p>
         <Stamp chars="怕的是他" round />
       </Ticket>
 
@@ -398,7 +398,7 @@ export function Retro({ chatId, title }: { chatId: number; title: string }) {
               {chat.me.qqCount > 0 ? `QQ 了 ${chat.me.qqCount} 次。` : "一次都沒 QQ，很穩。"}
               {chat.me.favoriteItem ? `最愛點 ${chat.me.favoriteItem}，口味很堅定。` : "還沒點過特定品項，路過打個醬油也行。"}
             </p>
-            <Stamp chars="榮勾斯揪" band="認證" />
+            <Stamp chars="榮勾絲揪" band="認證" />
           </>
         ) : (
           <>
