@@ -1,5 +1,5 @@
 import { db, api, BotApiError } from "sdk";
-import { eq } from "sdk/db";
+import { eq, lt } from "sdk/db";
 import { polls, pollVotes } from "../schema.ts";
 import {
   BYE_OPTIONS,
@@ -147,4 +147,43 @@ export async function handlePollAnswer(answer: PollAnswer) {
   } catch (error) {
     if (!(error instanceof BotApiError && error.code === 400)) throw error;
   }
+}
+
+const STALE_POLL_MS = 7 * 24 * 60 * 60 * 1000;
+const STALE_POLLS_PER_TICK = 10;
+
+/**
+ * Stops polls left open for over a week, quietly, without a results message. When Telegram can no
+ * longer stop one (message too old or deleted, bot removed from the chat), it is only marked closed.
+ */
+export async function closeStalePolls(now: number): Promise<number> {
+  const stale: StoredPoll[] = await db
+    .select()
+    .from(polls)
+    .where(eq(polls.isClosed, false), lt(polls.createdAt, now - STALE_POLL_MS))
+    .limit(STALE_POLLS_PER_TICK)
+    .all();
+
+  for (const poll of stale) {
+    if (poll.messageId !== null) {
+      try {
+        await savePollState(
+          await api.stopPoll({
+            chat_id: poll.chatId,
+            message_id: poll.messageId,
+            reply_markup: { inline_keyboard: [] },
+          })
+        );
+        continue;
+      } catch (error) {
+        const permanent = error instanceof BotApiError && (error.code === 400 || error.code === 403);
+        if (!permanent) {
+          console.warn("stopPoll failed, retrying next tick", { id: poll.id, error: String(error) });
+          continue;
+        }
+      }
+    }
+    await db.update(polls).set({ isClosed: true, updatedAt: now }).where(eq(polls.id, poll.id));
+  }
+  return stale.length;
 }
