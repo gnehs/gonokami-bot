@@ -2,7 +2,24 @@ export type PollKind = "vote" | "ramen";
 
 export type PollOption = { text: string; voterCount: number };
 
-export const BYE_OPTIONS = ["偶不吃了 😠", "怕的是他 👑", "蓋被被 😴"];
+// The last poll option, picked at random. It must not start with "+", or it would count as people.
+export const BYE_OPTIONS = [
+  "偶不吃了 😠",
+  "怕的是他 👑",
+  "蓋被被 😴",
+  "回家呼呼 💤",
+  "今天減肥 🥗",
+  "錢包森七七 💸",
+  "偶在忙啦 💼",
+  "下次一定 🙏",
+  "排隊很遜 🐌",
+  "偶吃泡麵就好 🍲",
+  "肚子還很飽 🤰",
+  "被老闆抓去加班 😵‍💫",
+  "窩在棉被裡 🛌",
+  "今天不揪 🙅",
+  "881 👋",
+];
 
 export const VOTE_OPTIONS = ["+1", "+2", "+4"];
 

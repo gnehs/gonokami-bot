@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDay, buildModel, historyBefore, predictWaitMinutes, scoreDay, summarizeAccuracy, type Observation } from "../src/lib/predict.ts";
-import { tallyOptions, tallyVoter, detectKind } from "../src/lib/poll.ts";
+import { BYE_OPTIONS, detectKind, parseOption, tallyOptions, tallyVoter } from "../src/lib/poll.ts";
 import { buildChatRetro, retroYear } from "../src/lib/retro.ts";
 import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
 import { formatClock, taipeiParts } from "../src/lib/time.ts";
@@ -112,4 +112,9 @@ test("queue response picks the newest record and its change time", () => {
   assert.equal(parseTargetNumber("1050"), 1050);
   assert.equal(parseTargetNumber("999"), null);
   assert.equal(parseTargetNumber("1300"), null);
+});
+
+test("every bye option counts as nobody", () => {
+  for (const text of BYE_OPTIONS) assert.deepEqual(parseOption(text), { people: 0, item: null }, text);
+  assert.ok(BYE_OPTIONS.every((text) => text.length <= 100), "Telegram caps poll options at 100 characters");
 });
