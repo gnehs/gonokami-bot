@@ -1,0 +1,9 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "gonokami-tick",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  // Every minute from 10:00 to 22:59 Asia/Taipei (UTC+8), the shop's opening hours.
+  "triggers": { "crons": ["* 2-14 * * *"] }
+}
