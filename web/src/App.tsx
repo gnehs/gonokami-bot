@@ -90,7 +90,7 @@ function Shell({ me }: { me: MeResult }) {
           <>
             <Pane active={tab === "polls"} show={visited.has("polls")}>{chatId !== null && <Polls chatId={chatId} />}</Pane>
             <Pane active={tab === "queue"} show={visited.has("queue")}><Queue /></Pane>
-            {me.retroYear !== null && <Pane active={tab === "retro"} show={visited.has("retro")}>{chatId !== null && <Retro chatId={chatId} />}</Pane>}
+            {me.retroYear !== null && <Pane active={tab === "retro"} show={visited.has("retro")}>{chatId !== null && <Retro chatId={chatId} title={chatLabel(me.chats.find((c) => c.id === chatId)!, me.user.id)} />}</Pane>}
           </>
         )}
       </main>

@@ -56,38 +56,70 @@ function assertViewable(chatId: number) {
   }
 }
 
+const RETRO_NAMES = [
+  "小明", "阿凱", "Yuki", "芷晴", "大雄", "Peggy", "老王", "Kevin", "怡君", "宗翰",
+  "Amber", "阿傑", "佩珊", "Ethan", "雅婷", "志豪", "Jolin", "冠宇", "Sandy", "建宏",
+  "Mia", "柏翰", "欣怡", "Leo", "郁婷", "家豪", "Tina", "俊傑", "Vivian", "承恩",
+  "靜怡", "Ryan", "品妍", "哲瑋", "Cindy", "威廷", "Eric", "思穎", "阿哲", "路人甲",
+];
+
 function retroFor(chatId: number): ChatRetro {
-  const polls = pollsFor(chatId);
-  const monthCounts = Array<number>(12).fill(0);
-  const weekdayCounts = Array<number>(7).fill(0);
+  let s = Math.abs(chatId) % 9973 + 11;
+  const rnd = () => {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
+  const year = 2026;
+  const weeks = 53;
   const itemTotals = Object.fromEntries(ITEMS.map((item) => [item, 0]));
-  const voters = new Map<number, ChatRetro["voters"][number]>();
-  for (const poll of polls) {
-    const date = new Date(poll.createdAt);
-    monthCounts[date.getMonth()]++;
-    weekdayCounts[date.getDay()]++;
-    for (const [item, n] of Object.entries(poll.tally.items)) itemTotals[item] += n;
-    for (const v of poll.voters) {
-      const row = voters.get(v.userId) ?? { userId: v.userId, name: v.name, pollsJoined: 0, people: 0, favoriteItem: "🍜 單點" };
-      row.pollsJoined++;
-      row.people += v.people;
-      voters.set(v.userId, row);
-    }
+  const monthPeople = Array<number>(12).fill(0);
+  const weekdayCounts = Array<number>(7).fill(0);
+  const gatherings: ChatRetro["gatherings"] = [];
+  const weekAttend: number[] = [];
+  for (let w = 0; w < weeks; w++) {
+    const day = Math.min(364, w * 7 + Math.floor(rnd() * 5));
+    const at = Date.UTC(year, 0, 1) + day * DAY + 4 * 3_600_000;
+    if (rnd() < 0.15) { weekAttend.push(0); continue; }
+    const people = 4 + Math.floor(rnd() * 14) + (w % 9 === 4 ? 8 : 0);
+    gatherings.push({ question: "今天吃五之神嗎？", createdAt: at, people });
+    monthPeople[new Date(at).getUTCMonth()] += people;
+    weekdayCounts[new Date(at).getUTCDay()]++;
+    weekAttend.push(people);
   }
-  const ranked = [...voters.values()].sort((a, b) => b.people - a.people);
-  const biggest = [...polls].sort((a, b) => b.tally.people - a.tally.people)[0];
-  const meIndex = ranked.findIndex((v) => v.userId === USER_ID);
+  const attendedWeeks = weekAttend.map((n, w) => (n > 0 ? w : -1)).filter((w) => w >= 0);
+  const voters = RETRO_NAMES.map((name, v): ChatRetro["voters"][number] => {
+    const loyalty = 0.75 * Math.pow(1 - v / RETRO_NAMES.length, 1.6) + 0.04;
+    const weekCounts = Array<number>(weeks).fill(0);
+    let qqCount = 0;
+    for (const w of attendedWeeks) {
+      const r = rnd();
+      if (r < loyalty) weekCounts[w] = 1 + (rnd() < 0.18 ? 1 : 0) + (rnd() < 0.04 ? 1 : 0);
+      else if (rnd() < 0.12) qqCount++;
+    }
+    const pollsJoined = weekCounts.reduce((a, b) => a + b, 0);
+    return {
+      userId: USER_ID + v,
+      name,
+      pollsJoined,
+      people: pollsJoined + Math.floor(pollsJoined * rnd() * 0.5),
+      qqCount,
+      favoriteItem: pollsJoined > 0 ? ITEMS[Math.floor(rnd() * ITEMS.length)] : null,
+      weekCounts,
+    };
+  }).sort((a, b) => b.pollsJoined - a.pollsJoined || b.people - a.people);
+  for (const voter of voters) if (voter.favoriteItem) itemTotals[voter.favoriteItem] += voter.people;
+  const meIndex = voters.findIndex((v) => v.userId === USER_ID);
   return {
-    year: 2026,
-    pollCount: polls.length,
-    ramenPollCount: polls.filter((p) => p.kind === "ramen").length,
-    totalPeople: polls.reduce((s, p) => s + p.tally.people, 0),
+    year,
+    pollCount: gatherings.length + 6,
+    ramenPollCount: gatherings.length,
+    totalPeople: monthPeople.reduce((a, b) => a + b, 0),
     itemTotals,
-    biggestPoll: { question: biggest.question, people: biggest.tally.people, createdAt: biggest.createdAt },
-    monthCounts,
+    gatherings,
+    monthPeople,
     weekdayCounts,
-    voters: ranked,
-    me: meIndex >= 0 ? { ...ranked[meIndex], rank: meIndex + 1, favoriteItem: "🥚 加蛋" } : null,
+    voters,
+    me: meIndex >= 0 ? { ...voters[meIndex], rank: meIndex + 1 } : null,
   };
 }
 
