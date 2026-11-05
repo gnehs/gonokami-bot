@@ -1,93 +1,224 @@
 .retro {
-  --r-light: #e0f2fe;
-  --r-deep: #0369a1;
-  --r-accent: #38bdf8;
-  --r-text: #0c4a6e;
-  --r-muted: color-mix(in srgb, #0c4a6e 70%, #e0f2fe);
-  --r-serif: "Noto Serif TC", "Songti TC", "Source Han Serif TC", "Noto Serif CJK TC", serif;
+  --r-paper: #fbfbf9;
+  --r-ink: #2b2b2a;
+  --r-muted: #7a7a77;
+  --r-gray: #9b9b98;
+  --r-rule: #c9c9c5;
+  --r-faint: #ececea;
+  --r-red: #c8352b;
+  --r-counter: #22201e;
+  --r-zz: 8px;
+  --r-sans: -apple-system, system-ui, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   color-scheme: light;
-  color: var(--r-text);
-  background: linear-gradient(180deg, #e0f2fe, #bae6fd);
-  border-radius: 1.5rem;
-  padding: 0.75rem;
+  color: var(--r-ink);
+  font-family: var(--r-sans);
+  font-variant-numeric: tabular-nums;
+  background-color: var(--r-counter);
+  background-image: url("/noise.svg");
+  border-radius: 1.25rem;
+  padding: 1rem 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
   overflow: hidden;
 }
 
-.retro-card {
+/* Thermal slip: faint grain, a little shading where the paper curls, and a fine zigzag cut top and bottom. */
+.retro-ticket {
   position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  border-radius: 0.875rem;
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  padding: 1.25rem 1rem;
-  font-family: var(--r-serif);
-  background-color: #d7eefc;
-  background-image: linear-gradient(140deg, rgba(255, 255, 255, 0.5) 28.7%, rgba(255, 255, 255, 0.15));
-  box-shadow:
-    rgba(255, 255, 255, 0.8) 1px 1px 1px 0 inset,
-    rgba(12, 74, 110, 0.05) -1px -1px 1px 0 inset,
-    0 10px 15px -3px rgb(12 74 110 / 0.1),
-    0 4px 6px -4px rgb(12 74 110 / 0.1);
+  padding: calc(var(--r-zz) / 2 + 1rem) 1rem calc(var(--r-zz) / 2 + 1.25rem);
+  background-color: var(--r-paper);
+  background-image:
+    linear-gradient(90deg, rgb(0 0 0 / 0.045), transparent 14%, transparent 86%, rgb(0 0 0 / 0.045)),
+    url("/noise.svg");
+  background-blend-mode: normal, multiply;
+  -webkit-mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--r-zz) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--r-zz) 51% repeat-x;
+  mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--r-zz) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--r-zz) 51% repeat-x;
 }
 
-.retro-fog,
-.retro-noise {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.retro-fog {
-  object-fit: cover;
-  opacity: 0.6;
-  mix-blend-mode: plus-lighter;
-}
-
-.retro-noise {
-  background-image: url("/noise.svg");
-  opacity: 0.2;
-}
-
-.retro-title {
-  margin: 0 0 1rem;
+.retro-head,
+.retro-intro {
   text-align: center;
-  font-size: 1.5rem;
-  line-height: 1.3;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: var(--r-deep);
 }
 
-.retro-sub {
-  margin: -0.5rem 0 1rem;
-  text-align: center;
-  font-size: 0.8125rem;
+.retro-head p,
+.retro-intro p {
+  margin: 0;
+}
+
+.retro-shop {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
   color: var(--r-muted);
 }
 
-.retro-hero {
-  min-height: 21rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
-  text-align: center;
+.retro-title {
+  margin: 0.375rem 0 0;
+  font-size: 1.75rem;
+  line-height: 1.25;
+  font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
-.retro-hero-name {
-  font-size: 2.25rem;
-  line-height: 1.2;
-  font-weight: 700;
-  max-width: 100%;
+.retro-head .retro-meta {
+  margin-top: 0.375rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 500;
+  text-wrap: balance;
+}
+
+/* Tear-off line with a notch punched out of each side. */
+.retro-perf {
+  position: relative;
+  margin: 1rem -1rem 1.125rem;
+  border-top: 1.5px dashed var(--r-rule);
+}
+
+.retro-perf::before,
+.retro-perf::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--r-counter);
+}
+.retro-perf::before { left: -7px; }
+.retro-perf::after { right: -7px; }
+
+.retro-intro .retro-group {
+  margin-top: 0.25rem;
+  font-size: 1.125rem;
+  line-height: 1.35;
+  font-weight: 600;
   overflow-wrap: anywhere;
-  color: var(--r-deep);
+}
+
+.retro-intro .retro-year {
+  margin-top: 0.25rem;
+  font-size: 5.25rem;
+  line-height: 1.1;
+  font-weight: 300;
+  letter-spacing: 0.01em;
+}
+
+.retro-stamped {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.retro-rules {
+  list-style: decimal;
+  margin: 0;
+  padding: 0 0 0 1.375rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.retro-nowrap {
+  white-space: nowrap;
+}
+
+.retro-rules li + li {
+  margin-top: 0.125rem;
+}
+
+.retro-qr {
+  display: block;
+  width: 6.25rem;
+  height: 6.25rem;
+  margin: 1.5rem auto 0;
+  color: var(--r-ink);
+}
+
+.retro-powered {
+  margin: 0.75rem 0 0;
+  text-align: right;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: var(--r-muted);
+}
+
+.retro-stamp {
+  position: absolute;
+  width: 5.25rem;
+  height: 5.25rem;
+  color: var(--r-red);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.retro-stamp-text {
+  font-family: "Noto Serif TC", "Songti TC", "Source Han Serif TC", serif;
+}
+
+.retro-qr ~ .retro-stamp {
+  bottom: 2.5rem;
+  right: 1.25rem;
+  transform: rotate(-12deg);
+}
+
+.retro-caption ~ .retro-stamp {
+  top: 8.25rem;
+  right: 0.75rem;
+  transform: rotate(9deg);
+}
+
+.retro-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 1.25rem;
+}
+
+.retro-leader {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.retro-leader-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.retro-leader-dots {
+  flex: 1 1 1.5rem;
+  min-width: 1.5rem;
+  align-self: stretch;
+  margin-bottom: 0.4em;
+  background: radial-gradient(circle, var(--r-gray) 0.9px, transparent 1.3px) left bottom / 5px 4px repeat-x;
+}
+
+.retro-leader-value {
+  flex: none;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.retro-total {
+  margin-top: 0.375rem;
+  padding-top: 0.5rem;
+  border-top: 1.5px solid var(--r-ink);
+}
+
+.retro-total .retro-leader {
+  font-weight: 600;
 }
 
 .retro-bars {
@@ -96,37 +227,52 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
 }
 
 .retro-bars li {
   display: grid;
-  grid-template-columns: 4.75rem 1fr;
+  grid-template-columns: 1.375rem 4.5rem 1fr 1.75rem;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed var(--r-rule);
+  font-size: 0.875rem;
+}
+
+.retro-bars li:last-child {
+  border-bottom: 0;
+}
+
+.retro-bar-rank {
+  font-size: 0.75rem;
+  color: var(--r-muted);
+}
+
+.retro-bar-value {
+  text-align: right;
+  font-weight: 500;
 }
 
 .retro-bar-name {
-  font-size: 0.875rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: right;
+}
+
+.retro-bar-track {
+  height: 0.625rem;
 }
 
 .retro-bar {
-  height: 1.5rem;
-  min-width: 1.75rem;
-  border-radius: 0.3125rem;
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.85), var(--r-deep));
-  color: #fff;
-  font-size: 0.8125rem;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 0.4rem;
-  font-variant-numeric: tabular-nums;
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  background: var(--r-gray);
 }
+
+.retro-bars li[data-top] .retro-bar { background: var(--r-ink); }
+.retro-bars li[data-top] .retro-bar-name,
+.retro-bars li[data-top] .retro-bar-value { font-weight: 700; }
 
 /* overflow-x alone makes overflow-y auto too; a few px of vertical slack then traps page swipes. */
 .retro-scroll {
@@ -139,23 +285,24 @@
 .retro-heat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   width: max-content;
 }
 
 .retro-heat-row {
   display: grid;
-  grid-template-columns: 4.5rem repeat(53, 9px) 1.75rem;
-  gap: 2px;
+  grid-template-columns: 4.5rem repeat(53, 10px) 1.75rem;
+  gap: 3px;
   align-items: center;
 }
 
 .retro-heat-name,
 .retro-heat-count {
   position: sticky;
-  background: #e3f3fd;
+  background: var(--r-paper) url("/noise.svg");
+  background-blend-mode: multiply;
   z-index: 1;
-  line-height: 11px;
+  line-height: 12px;
   font-size: 0.75rem;
 }
 
@@ -171,7 +318,7 @@
   right: 0;
   text-align: right;
   padding-left: 0.25rem;
-  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .retro-heat-month {
@@ -182,21 +329,21 @@
 }
 
 .retro-cell {
-  width: 9px;
-  height: 11px;
-  border-radius: 2px;
-  background: rgba(3, 105, 161, 0.08);
+  width: 10px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--r-faint);
 }
-.retro-cell[data-n="1"] { background: #7dd3fc; }
-.retro-cell[data-n="2"] { background: #38bdf8; }
-.retro-cell[data-n="3"] { background: #0369a1; }
+.retro-cell[data-n="1"] { background: #b4b4b0; }
+.retro-cell[data-n="2"] { background: #6e6e6b; }
+.retro-cell[data-n="3"] { background: var(--r-ink); }
 
 .retro-legend {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 0.25rem;
-  margin-top: 0.75rem;
+  margin-top: 0.875rem;
   font-size: 0.75rem;
   color: var(--r-muted);
 }
@@ -205,8 +352,9 @@
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  height: 11rem;
-  padding-top: 1.25rem;
+  height: 10rem;
+  padding-top: 1rem;
+  border-bottom: 1.5px solid var(--r-ink);
 }
 
 .retro-col {
@@ -221,14 +369,15 @@
 
 .retro-col-fill {
   width: 100%;
-  border-radius: 4px 4px 0 0;
-  background: linear-gradient(180deg, var(--r-accent), var(--r-deep));
+  background: var(--r-gray);
 }
 
+.retro-col[data-peak] .retro-col-fill { background: var(--r-ink); }
+.retro-col[data-peak] .retro-col-val { font-weight: 700; }
+
 .retro-col-val {
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   line-height: 1.2;
-  font-variant-numeric: tabular-nums;
   margin-bottom: 2px;
 }
 
@@ -251,101 +400,125 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.retro-tile {
-  border-radius: 0.375rem;
-  padding: 0.625rem 0.75rem;
-  background-image: linear-gradient(140deg, rgba(255, 255, 255, 0.5) 28.7%, rgba(255, 255, 255, 0.15));
-  box-shadow:
-    rgba(255, 255, 255, 0.8) 1px 1px 1px 0 inset,
-    rgba(12, 74, 110, 0.05) -1px -1px 1px 0 inset;
+  margin-top: 1.25rem;
 }
 .retro-tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
+.retro-tile {
+  min-width: 0;
+  padding: 0.5rem 0.625rem 0.625rem;
+  border: 1px solid var(--r-ink);
+  border-radius: 2px;
+}
+
 .retro-tile-name {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--r-muted);
 }
 
 .retro-tile-value {
-  font-size: 1.5rem;
-  line-height: 1.25;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  margin-top: 0.125rem;
+  font-size: 1.625rem;
+  line-height: 1.2;
+  font-weight: 300;
+  white-space: nowrap;
+}
+
+.retro-tiles:not(.three) .retro-tile:last-child .retro-tile-value {
+  font-size: 1.25rem;
+  line-height: 1.55;
+  font-weight: 400;
 }
 
 .retro-tile-unit {
   margin-left: 0.25rem;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--r-muted);
 }
 
-.retro-donut-wrap {
+.retro-tile-detail {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.retro-bowl {
   position: relative;
   width: 12.5rem;
   max-width: 100%;
   margin: 0 auto;
 }
 
-.retro-donut-center {
+.retro-bowl svg {
+  display: block;
+}
+
+.retro-bowl-center {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 
-.retro-donut-list {
-  list-style: none;
-  margin: 1rem 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.retro-bowl-total {
+  font-size: 1.75rem;
+  font-weight: 300;
 }
 
-.retro-donut-list li {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9375rem;
+.retro-bowl-unit {
+  font-size: 0.75rem;
+  color: var(--r-muted);
 }
 
 .retro-swatch {
   width: 0.75rem;
   height: 0.75rem;
-  border-radius: 3px;
+  border-radius: 50%;
   flex: none;
+  box-shadow: inset 0 0 0 1px #8a8a87;
 }
 
-.retro-big {
-  font-size: 4rem;
-  line-height: 1;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--r-deep);
+.retro-figure {
+  margin: 0;
+  text-align: center;
+  font-size: 4.5rem;
+  line-height: 1.1;
+  font-weight: 300;
+  white-space: nowrap;
 }
 
-.retro-big small {
-  margin-left: 0.5rem;
-  font-size: 1.25rem;
-  color: var(--r-text);
+.retro-figure small {
+  margin-left: 0.375rem;
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.retro-caption {
+  margin: 0;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .retro-note {
-  margin: 0.75rem 0 0;
-  text-align: center;
-  font-size: 0.9375rem;
+  margin: 0.875rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
   color: var(--r-muted);
+  text-wrap: pretty;
 }
 
-.retro-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.retro-figure + .retro-note,
+.retro-absent + .retro-note {
   text-align: center;
+}
+
+.retro-absent {
+  margin: 0;
+  text-align: center;
+  font-size: 1.75rem;
+  font-weight: 300;
 }
