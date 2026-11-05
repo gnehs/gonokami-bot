@@ -3,7 +3,8 @@ import { formatMinuteOfDay } from "./format.ts";
 
 const W = 320;
 const H = 150;
-const PAD = { l: 38, r: 10, t: 12, b: 24 };
+// The right pad fits half of the last hour label, which is centered on the axis edge.
+const PAD = { l: 38, r: 18, t: 12, b: 24 };
 
 export function QueueChart({ points }: { points: Point[] }) {
   const sorted = [...points].sort((a, b) => a[1] - b[1]);
