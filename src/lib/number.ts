@@ -1,10 +1,11 @@
 import { db, api, BotApiError } from "sdk";
-import { and, eq } from "sdk/db";
+import { and, eq, sql } from "sdk/db";
 import { subscriptions } from "../schema.ts";
 import { parseTargetNumber, type QueueReading } from "./queue.ts";
-import { predictCallTime, readQueue, todaySessions } from "./store.ts";
+import { predictWait, type Model } from "./predict.ts";
+import { loadModel, predictCallTime, readQueue, todaySessions } from "./store.ts";
 import { mention, type CallbackQuery, type Message } from "./telegram.ts";
-import { awaitsReset, isBetweenSessions, subscriptionOutcome, type Outcome, type SubscriptionState } from "./subscription.ts";
+import { awaitsReset, isBetweenSessions, mayRemind, SOON_MS, subscriptionOutcome, type Outcome, type SubscriptionState } from "./subscription.ts";
 import { formatClock } from "./time.ts";
 import {
   cancelGoneText,
@@ -14,6 +15,7 @@ import {
   cancelToastText,
   changedText,
   currentNumberText,
+  almostText,
   expiredText,
   invalidNumberText,
   nextSessionText,
@@ -31,6 +33,7 @@ import {
 } from "./voice.ts";
 
 type Subscription = SubscriptionState & {
+  remindedAt: number | null;
   chatId: number;
   userId: number;
   firstName: string;
@@ -69,15 +72,13 @@ async function deleteSubscription(sub: Subscription): Promise<boolean> {
   return rowsAffected > 0;
 }
 
-const SOON_MINUTES = 10;
-
 async function predictionLine(reading: QueueReading, target: number): Promise<string> {
   if (target <= reading.number) return `\n${nextSessionText()}`;
   try {
     const now = Date.now();
     const { likely, earliest, latest } = await predictCallTime(reading.number, target, now);
     const times = { likely: formatClock(likely), earliest: formatClock(earliest), latest: formatClock(latest) };
-    return `\n${predictionText(times, { soon: likely - now <= SOON_MINUTES * 60_000, hasRange: times.earliest !== times.latest })}`;
+    return `\n${predictionText(times, { soon: likely - now <= SOON_MS, hasRange: times.earliest !== times.latest })}`;
   } catch (error) {
     console.error("prediction failed", error);
     return `\n${predictionFailedText()}`;
@@ -140,6 +141,7 @@ export async function handleNumberCommand(message: Message, arg: string | undefi
     messageId: sent.message_id,
     createdAt: Date.now(),
     waitsForReset,
+    remindedAt: null,
   };
   await db
     .insert(subscriptions)
@@ -171,26 +173,61 @@ function outcomeText(sub: Subscription, outcome: Outcome): string {
   return sessionOverText(who, sub.targetNumber);
 }
 
-/** Called every minute: announce reached numbers, drop subscriptions older than five hours or from a finished session. */
+async function send(sub: Subscription, text: string) {
+  await api.sendMessage({
+    chat_id: sub.chatId,
+    text,
+    parse_mode: "HTML",
+    reply_parameters: { message_id: sub.messageId, allow_sending_without_reply: true },
+  });
+}
+
+/** Marking first means overlapping ticks never warn twice; a failed send is not retried, so nobody is warned late. */
+async function claimReminder(sub: Subscription, now: number): Promise<boolean> {
+  const { rowsAffected } = await db
+    .update(subscriptions)
+    .set({ remindedAt: now })
+    .where(
+      eq(subscriptions.chatId, sub.chatId),
+      eq(subscriptions.userId, sub.userId),
+      eq(subscriptions.messageId, sub.messageId),
+      sql`${subscriptions.remindedAt} IS NULL`
+    );
+  return rowsAffected > 0;
+}
+
+/**
+ * Called every minute: announce reached numbers, warn when one is predicted within ten minutes, and drop
+ * subscriptions older than five hours or from a finished session.
+ */
 export async function notifySubscribers(reading: QueueReading) {
   const subs: Subscription[] = await db.select().from(subscriptions).all();
   if (subs.length === 0) return 0;
   const now = Date.now();
   const sessions = await todaySessions(now);
+  let model: Model | null = null;
   let notified = 0;
   for (const sub of subs) {
     const outcome = subscriptionOutcome(sub, sessions, reading.number, now);
-    if (!outcome) continue;
+    if (!outcome) {
+      if (!mayRemind(sub, reading.number, reading.changedAt, now)) continue;
+      model ??= await loadModel();
+      const wait = predictWait(model, now, reading.number, sub.targetNumber);
+      if (wait.likely * 60_000 > SOON_MS || !(await claimReminder(sub, now))) continue;
+      try {
+        const likely = formatClock(now + wait.likely * 60_000);
+        await send(sub, almostText(mention(sub.userId, sub.firstName), sub.targetNumber, reading.number, likely));
+        notified += 1;
+      } catch (error) {
+        console.error("reminder failed", { sub, error: String(error) });
+      }
+      continue;
+    }
 
     // Whoever deletes the row sends the message, so overlapping ticks never announce twice.
     if (!(await deleteSubscription(sub))) continue;
     try {
-      await api.sendMessage({
-        chat_id: sub.chatId,
-        text: outcomeText(sub, outcome),
-        parse_mode: "HTML",
-        reply_parameters: { message_id: sub.messageId, allow_sending_without_reply: true },
-      });
+      await send(sub, outcomeText(sub, outcome));
       await clearButton(sub.chatId, sub.messageId);
       notified += 1;
     } catch (error) {

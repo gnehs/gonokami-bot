@@ -4,7 +4,7 @@ import { buildDay, buildModel, buildSessions, callingSegments, historyBefore, pr
 import { BYE_OPTIONS, detectKind, parseOption, tallyOptions, tallyVoter } from "../src/lib/poll.ts";
 import { buildChatRetro, retroYear } from "../src/lib/retro.ts";
 import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
-import { isBetweenSessions, subscriptionOutcome, type SubscriptionState } from "../src/lib/subscription.ts";
+import { isBetweenSessions, mayRemind, subscriptionOutcome, type SubscriptionState } from "../src/lib/subscription.ts";
 import { formatClock, taipeiParts } from "../src/lib/time.ts";
 import { toBase64 } from "../src/lib/base64.ts";
 import * as voice from "../src/lib/voice.ts";
@@ -118,6 +118,17 @@ test("a passed number taken in the break waits for the next session", () => {
   assert.equal(replay(day, dinner), "reached 19:05");
   const passedAgain = { targetNumber: 1070, createdAt: at("2026-11-06", "13:30"), waitsForReset: true };
   assert.equal(replay(day, passedAgain), "sessionOver 21:31");
+});
+
+test("a heads-up waits for a live board, an unwarned subscription old enough to need it", () => {
+  const now = at("2026-11-06", "12:30");
+  const sub = { targetNumber: 1050, createdAt: at("2026-11-06", "12:00"), waitsForReset: false, remindedAt: null };
+  const calling = at("2026-11-06", "12:28");
+  assert.equal(mayRemind(sub, 1045, calling, now), true);
+  assert.equal(mayRemind({ ...sub, remindedAt: at("2026-11-06", "12:20") }, 1045, calling, now), false, "warned already");
+  assert.equal(mayRemind({ ...sub, createdAt: at("2026-11-06", "12:25") }, 1045, calling, now), false, "its reply just said so");
+  assert.equal(mayRemind(sub, 1045, at("2026-11-06", "11:50"), now), false, "board idle, session over");
+  assert.equal(mayRemind({ ...sub, targetNumber: 1020, waitsForReset: true }, 1045, calling, now), false, "waits for the next session");
 });
 
 test("a day logged in one burst is not trusted for timing", () => {
@@ -254,6 +265,7 @@ test("every bot line mixes its clauses into a well-formed sentence that keeps it
     ["cancelToast", (r) => voice.cancelToastText(r), []],
     ["cancelled", (r) => voice.cancelledText(1060, r), ["1060"]],
     ["reached", (r) => voice.reachedText(who, 1060, r), [who, "1060"]],
+    ["almost", (r) => voice.almostText(who, 1060, 1055, "12:12", r), [who, "1060", "1055", "12:12"]],
     ["expired", (r) => voice.expiredText(who, 1060, r), [who, "1060"]],
     ["sessionOver", (r) => voice.sessionOverText(who, 1060, r), [who, "1060", "/number"]],
     ["voteResult", (r) => voice.voteResultText("<b>午餐</b>", 5, r), ["<b>午餐</b>", "5"]],

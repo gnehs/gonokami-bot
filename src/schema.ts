@@ -85,6 +85,8 @@ export const subscriptions = table(
     createdAt: integer("created_at").notNull(),
     // Taken between sessions for a number the board had already passed; it counts only after the next reset.
     waitsForReset: boolean("waits_for_reset").notNull().default(false),
+    // When the "almost your turn" heads-up went out; each subscription gets at most one.
+    remindedAt: integer("reminded_at"),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.chatId, t.userId] }),

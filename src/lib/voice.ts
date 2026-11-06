@@ -178,6 +178,16 @@ export const reachedText = (who: string, target: number, random: Random = Math.r
     ["，怕的是他。還不快去！", "，拉麵在等你 🍜", "，快衝！🏃"]
   );
 
+export const almostText = (who: string, target: number, current: number, likely: string, random: Random = Math.random) =>
+  mix(
+    random,
+    ["喂～ 🏃 ", "叮咚 ⏰ ", "注意注意 📢 ", "👑 國王熊熊提醒 "],
+    [`${who} ，${target} 號快到了`, `${who} ，再一下下就輪到 ${target} 號了`, `${who} ，${target} 號要來了`],
+    [`！看板現在 ${b(current)}`, `，現在叫到 ${b(current)}`],
+    [`，大概 ${b(likely)} 叫到你`, `，偶看 ${b(likely)} 左右就到你`],
+    ["，準備往店門口移動 🏃", "，肚子先準備好 🍜", "，別再滑手機了 🐻", "，皇家拉麵在等你～"]
+  );
+
 export const expiredText = (who: string, target: number, random: Random = Math.random) =>
   mix(
     random,

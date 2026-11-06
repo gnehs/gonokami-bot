@@ -3,6 +3,8 @@ import type { Observation } from "./predict.ts";
 export const SUBSCRIPTION_TTL_MS = 5 * 60 * 60 * 1000;
 // Mid-session lulls last under half an hour; a board left alone longer has finished its session.
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
+/** A call predicted this close counts as "almost your turn", both in replies and for the heads-up. */
+export const SOON_MS = 10 * 60 * 1000;
 
 export type SubscriptionState = {
   targetNumber: number;
@@ -12,6 +14,20 @@ export type SubscriptionState = {
 };
 
 export type Outcome = "reached" | "expired" | "sessionOver";
+
+/**
+ * Whether a heads-up could go out now, before asking the model: the board is still calling, the subscription
+ * counts in this session, it was not warned yet, and it is old enough that its own reply did not already say
+ * the call was close.
+ */
+export function mayRemind(sub: SubscriptionState & { remindedAt: number | null }, current: number, changedAt: number, now: number): boolean {
+  return (
+    sub.remindedAt === null &&
+    !awaitsReset(sub, current) &&
+    !isBetweenSessions(changedAt, now) &&
+    now - sub.createdAt >= SOON_MS
+  );
+}
 
 /** Between sessions the board keeps the last session's final number; a number at or below it may belong to the next one. */
 export function isBetweenSessions(changedAt: number, now: number): boolean {
