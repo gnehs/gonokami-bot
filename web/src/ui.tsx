@@ -83,18 +83,21 @@ export function Row({ icon, title, subtitle, value, detail, footer, onClick }: R
   const body = (
     <>
       {icon && <span className="mr-3">{icon}</span>}
-      <span className="row-body flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2.5 mr-4">
-        <span className="min-w-0 flex-1">
-          <span className="block break-words text-[17px] font-medium leading-snug">{title}</span>
-          {subtitle && <span className="mt-0.5 block truncate text-[15px] leading-snug text-hint">{subtitle}</span>}
-          {footer}
-        </span>
-        {(value !== undefined || detail) && (
-          <span className="shrink-0 text-right">
-            {value !== undefined && <span className="num block text-[17px] font-semibold leading-snug">{value}</span>}
-            {detail && <span className="mt-0.5 block text-[15px] leading-snug">{detail}</span>}
+      {/* The footer sits under both columns, so it gets the row's full width and the value stays beside the title. */}
+      <span className="row-body flex min-h-[62px] min-w-0 flex-1 flex-col justify-center py-2.5 mr-4">
+        <span className="flex items-center gap-3">
+          <span className="min-w-0 flex-1">
+            <span className="block break-words text-[17px] font-medium leading-snug">{title}</span>
+            {subtitle && <span className="mt-0.5 block truncate text-[15px] leading-snug text-hint">{subtitle}</span>}
           </span>
-        )}
+          {(value !== undefined || detail) && (
+            <span className="shrink-0 text-right">
+              {value !== undefined && <span className="num block text-[17px] font-semibold leading-snug">{value}</span>}
+              {detail && <span className="mt-0.5 block text-[15px] leading-snug">{detail}</span>}
+            </span>
+          )}
+        </span>
+        {footer}
       </span>
     </>
   );
