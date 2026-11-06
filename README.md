@@ -25,7 +25,7 @@ Mini App 只會顯示你目前還在的群組。每次讀取群組資料前，�
 | `src/` | Bot 程式碼（TypeScript）。`pnpm build:cloud` 會編譯到 `tgcloud/`，也就是平台實際執行的 JS 模組。 |
 | `src/handlers/` | Telegram update handler，檔名就是 update 類型，例如 `message`、`poll_answer`。 |
 | `src/endpoints/` | Mini App 呼叫的 API。`tick` 和 `importHistory` 只接受 `tgcloud run`，Mini App 呼叫會被拒絕。 |
-| `src/lib/` | 共用邏輯。`predict`、`poll`、`retro`、`queue`、`subscription`、`time` 不依賴 SDK，可直接用 `node --test` 測。 |
+| `src/lib/` | 共用邏輯。`predict`、`poll`、`retro`、`queue`、`subscription`、`time`、`voice` 不依賴 SDK，可直接用 `node --test` 測。`voice` 是偶所有的台詞，每句由幾段子句隨機組合，想加說法就往對應的陣列加。 |
 | `web/` | Mini App 前端，build 到 `dist/`，由 tgcloud 一起部署。 |
 | `worker/` | Cloudflare Worker，週五到週日 10:00–21:59 每分鐘觸發一次 `endpoints/tick`。五之神只在這幾天用叫號看板。 |
 | `scripts/` | 歷史資料匯入，以及打包 Worker 用的模組原始碼。 |

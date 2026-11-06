@@ -7,7 +7,7 @@ import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
 import { isBetweenSessions, subscriptionOutcome, type SubscriptionState } from "../src/lib/subscription.ts";
 import { formatClock, taipeiParts } from "../src/lib/time.ts";
 import { toBase64 } from "../src/lib/base64.ts";
-import { nextSessionText, predictionFailedText, predictionText } from "../src/lib/voice.ts";
+import * as voice from "../src/lib/voice.ts";
 
 const at = (date: string, clock: string) => Date.parse(`${date}T${clock}:00+08:00`);
 
@@ -219,7 +219,7 @@ test("every mix of prediction clauses reads as one sentence with the times in it
   for (let i = 0; i < 3000; i += 1) {
     const soon = i % 2 === 0;
     const hasRange = i % 3 !== 0;
-    const text = predictionText(times, { soon, hasRange }, random);
+    const text = voice.predictionText(times, { soon, hasRange }, random);
     seen.add(text);
     assert.ok(text.includes("<b>12:12</b>"), text);
     assert.equal(text.includes("12:05") && text.includes("12:30"), hasRange, text);
@@ -227,8 +227,57 @@ test("every mix of prediction clauses reads as one sentence with the times in it
   }
   assert.ok(seen.size > 200, `only ${seen.size} distinct lines`);
   assert.equal(
-    predictionText(times, { soon: false, hasRange: true }, () => 0),
+    voice.predictionText(times, { soon: false, hasRange: true }, () => 0),
     "🐻 偶用熊鼻子聞了一下，大概 <b>12:12</b> 會叫到你，最早 12:05、最晚 12:30，醬子。"
   );
-  assert.ok(nextSessionText(() => 0.99) && predictionFailedText(() => 0.99));
+});
+
+test("every bot line mixes its clauses into a well-formed sentence that keeps its numbers", () => {
+  const who = '<a href="tg://user?id=1">勝勝</a>';
+  // Each line, called with sample values, and the values its text must carry.
+  const lines: [string, (random: voice.Random) => string, string[]][] = [
+    ["unreachable", (r) => voice.unreachableText(r), []],
+    ["currentNumber", (r) => voice.currentNumberText(1042, r), ["1042"]],
+    ["subscribedAlready", (r) => voice.subscribedAlreadyText(1060, r), ["1060"]],
+    ["subscribedNextSession", (r) => voice.subscribedNextSessionText(1020, r), ["1020"]],
+    ["subscribeHint", (r) => voice.subscribeHintText(r), ["/number"]],
+    ["invalidNumber", (r) => voice.invalidNumberText(r), ["1001", "1200"]],
+    ["passed", (r) => voice.passedText(1030, r), ["1030"]],
+    ["changed", (r) => voice.changedText(1050, 1060, r), ["1050", "1060"]],
+    ["subscribed", (r) => voice.subscribedText(1060, r), ["1060"]],
+    ["waitsForReset", (r) => voice.waitsForResetText(1059, 1020, r), ["1059", "1020"]],
+    ["nextSession", (r) => voice.nextSessionText(r), []],
+    ["predictionFailed", (r) => voice.predictionFailedText(r), []],
+    ["cancelGone", (r) => voice.cancelGoneText(r), []],
+    ["cancelNotOwner", (r) => voice.cancelNotOwnerText(r), []],
+    ["cancelNothing", (r) => voice.cancelNothingText(r), []],
+    ["cancelToast", (r) => voice.cancelToastText(r), []],
+    ["cancelled", (r) => voice.cancelledText(1060, r), ["1060"]],
+    ["reached", (r) => voice.reachedText(who, 1060, r), [who, "1060"]],
+    ["expired", (r) => voice.expiredText(who, 1060, r), [who, "1060"]],
+    ["sessionOver", (r) => voice.sessionOverText(who, 1060, r), [who, "1060", "/number"]],
+    ["voteResult", (r) => voice.voteResultText("<b>午餐</b>", 5, r), ["<b>午餐</b>", "5"]],
+    ["ramenResultHeader", (r) => voice.ramenResultHeader("<b>午餐</b>", r), ["<b>午餐</b>"]],
+    ["ramenResultFooter", (r) => voice.ramenResultFooter(5, r), ["5"]],
+    ["stopNotOwner", (r) => voice.stopNotOwnerText(r), []],
+    ["pollAlreadyClosed", (r) => voice.pollAlreadyClosedText(r), []],
+    ["greeting", (r) => voice.greetingText(r), ["/number"]],
+    ["appButton", (r) => voice.appButtonText(r), []],
+    ["staleButton", (r) => voice.staleButtonText(r), []],
+  ];
+  const exported = Object.keys(voice).filter((key) => key !== "predictionText").length;
+  assert.equal(lines.length, exported, "every exported line is covered here");
+
+  for (const [name, line, values] of lines) {
+    let seed = 11;
+    const random = () => ((seed = (seed * 48271) % 2147483647) / 2147483647);
+    const seen = new Set<string>();
+    for (let i = 0; i < 500; i += 1) {
+      const text = line(random);
+      seen.add(text);
+      for (const value of values) assert.ok(text.includes(value), `${name}: ${text}`);
+      assert.doesNotMatch(text, /[，。！？][，。！？]|undefined|null/, `${name}: ${text}`);
+    }
+    assert.ok(seen.size >= 3, `${name} has only ${seen.size} variants`);
+  }
 });

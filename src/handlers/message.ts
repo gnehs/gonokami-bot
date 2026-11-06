@@ -3,6 +3,7 @@ import { handleNumberCommand } from "../lib/number.ts";
 import { rememberChat, rememberUser } from "../lib/store.ts";
 import { parseCommand, type Message } from "../lib/telegram.ts";
 import { handleVoteCommand } from "../lib/votes.ts";
+import { appButtonText, greetingText } from "../lib/voice.ts";
 
 let botUsername: string | null = null;
 
@@ -18,7 +19,7 @@ async function sendAppButton(message: Message) {
   const button = { text: "📊 打開投票紀錄", url: `https://t.me/${username}?startapp${startParam}` };
   await api.sendMessage({
     chat_id: message.chat.id,
-    text: "👑 投票紀錄、叫號預測、年度回顧都在這裡，怕的是他。",
+    text: appButtonText(),
     reply_markup: { inline_keyboard: [[button]] },
   });
 }
@@ -35,7 +36,7 @@ export default async function (message: Message) {
       if (message.chat.type !== "private") return;
       await api.sendMessage({
         chat_id: message.chat.id,
-        text: "安安，榮勾絲揪來了，怕的是他。有事嗎？\n想訂閱叫號可以打 /number 你的號碼，偶會幫你記著，很ㄅㄧㄤˋ吧 ✨。",
+        text: greetingText(),
       });
       return sendAppButton(message);
     case "number":

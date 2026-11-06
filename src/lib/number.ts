@@ -6,7 +6,29 @@ import { predictCallTime, readQueue, todaySessions } from "./store.ts";
 import { mention, type CallbackQuery, type Message } from "./telegram.ts";
 import { awaitsReset, isBetweenSessions, subscriptionOutcome, type Outcome, type SubscriptionState } from "./subscription.ts";
 import { formatClock } from "./time.ts";
-import { nextSessionText, predictionFailedText, predictionText } from "./voice.ts";
+import {
+  cancelGoneText,
+  cancelledText,
+  cancelNothingText,
+  cancelNotOwnerText,
+  cancelToastText,
+  changedText,
+  currentNumberText,
+  expiredText,
+  invalidNumberText,
+  nextSessionText,
+  passedText,
+  predictionFailedText,
+  predictionText,
+  reachedText,
+  sessionOverText,
+  subscribeHintText,
+  subscribedAlreadyText,
+  subscribedNextSessionText,
+  subscribedText,
+  unreachableText,
+  waitsForResetText,
+} from "./voice.ts";
 
 type Subscription = SubscriptionState & {
   chatId: number;
@@ -75,40 +97,38 @@ async function reply(message: Message, text: string, extra: Record<string, unkno
 export async function handleNumberCommand(message: Message, arg: string | undefined) {
   const from = message.from!;
   const reading = await readQueue();
-  if (!reading) return reply(message, "挖哩咧 😵‍💫，偶拿不到號碼，很遜欸。");
+  if (!reading) return reply(message, unreachableText());
 
-  let text = `👑 哼嗯，現在號碼是 <b>${reading.number}</b>，醬子。`;
+  let text = currentNumberText(reading.number);
   const existing = await findSubscription(message.chat.id, from.id);
 
   if (arg === undefined) {
     if (existing) {
-      text += awaitsReset(existing, reading.number)
-        ? `\n✅ 你訂閱的是下一場的 <b>${existing.targetNumber}</b> 號，換場後叫到再跟你說，安安。`
-        : `\n✅ 你訂閱的 <b>${existing.targetNumber}</b> 號偶記下了，叫到再跟你說，安安。`;
+      text += `\n${awaitsReset(existing, reading.number) ? subscribedNextSessionText(existing.targetNumber) : subscribedAlreadyText(existing.targetNumber)}`;
       text += await predictionLine(reading, existing.targetNumber);
       return reply(message, text, { reply_markup: cancelMarkup(from.id) });
     }
-    return reply(message, `${text}\n\n想訂閱叫號？打 <code>/number 你的號碼</code>，偶幫你記著，很ㄅㄧㄤˋ吧 ✨。`);
+    return reply(message, `${text}\n\n${subscribeHintText()}`);
   }
 
   const target = parseTargetNumber(arg);
   if (target === null) {
-    return reply(message, `${text}\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`);
+    return reply(message, `${text}\n${invalidNumberText()}`);
   }
   const waitsForReset = target <= reading.number;
   if (waitsForReset && !isBetweenSessions(reading.changedAt, Date.now())) {
-    return reply(message, `${text}\n🤡 這位同學，<b>${target}</b> 已經過了，你很奇欸。`);
+    return reply(message, `${text}\n${passedText(target)}`);
   }
 
   if (existing) {
     await deleteSubscription(existing);
     await clearButton(existing.chatId, existing.messageId);
-    text += `\n🔁 幫你把叫號通知從 <b>${existing.targetNumber}</b> 改成 <b>${target}</b> 號了，怕的是他。`;
+    text += `\n${changedText(existing.targetNumber, target)}`;
   } else if (!waitsForReset) {
-    text += `\n🔔 <b>${target}</b> 號還沒到，叫到偶會在這裡喊你，怕的是他。`;
+    text += `\n${subscribedText(target)}`;
   }
   if (waitsForReset) {
-    text += `\n⏳ 看板停在 <b>${reading.number}</b> 很久了，這場應該收了。<b>${target}</b> 號偶當成下一場的號碼，等店家換場重新叫到再喊你。`;
+    text += `\n${waitsForResetText(reading.number, target)}`;
   }
   text += await predictionLine(reading, target);
   const sent = await reply(message, text, { reply_markup: cancelMarkup(from.id) });
@@ -129,28 +149,26 @@ export async function handleNumberCommand(message: Message, arg: string | undefi
 
 export async function handleCancelNumber(query: CallbackQuery, ownerId: number) {
   const message = query.message;
-  if (!message) return api.answerCallbackQuery({ callback_query_id: query.id, text: "訊息不見了，偶也沒轍。" });
+  if (!message) return api.answerCallbackQuery({ callback_query_id: query.id, text: cancelGoneText() });
   if (ownerId !== query.from.id) {
-    return api.answerCallbackQuery({ callback_query_id: query.id, text: "🗣️ 告老師喔，只有訂閱的人才能取消，你很奇欸。" });
+    return api.answerCallbackQuery({ callback_query_id: query.id, text: cancelNotOwnerText() });
   }
 
   await clearButton(message.chat.id, message.message_id);
   const sub = await findSubscription(message.chat.id, query.from.id);
-  if (!sub) return api.answerCallbackQuery({ callback_query_id: query.id, text: "你已經沒有叫號通知了，醬子。" });
+  if (!sub) return api.answerCallbackQuery({ callback_query_id: query.id, text: cancelNothingText() });
 
   await deleteSubscription(sub);
   if (sub.messageId !== message.message_id) await clearButton(sub.chatId, sub.messageId);
-  await api.answerCallbackQuery({ callback_query_id: query.id, text: "已取消叫號通知。" });
-  await reply(message, `🚫 哼嗯，偶幫你取消 <b>${sub.targetNumber}</b> 號的訂閱了。醬子。`);
+  await api.answerCallbackQuery({ callback_query_id: query.id, text: cancelToastText() });
+  await reply(message, cancelledText(sub.targetNumber));
 }
 
 function outcomeText(sub: Subscription, outcome: Outcome): string {
   const who = mention(sub.userId, sub.firstName);
-  if (outcome === "reached") return `喂～ 👑 ${who} ，你訂的 ${sub.targetNumber} 號到了，怕的是他。還不快去！`;
-  if (outcome === "expired") {
-    return `欸 👋 ${who} ，你的 ${sub.targetNumber} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`;
-  }
-  return `欸 👋 ${who} ，這場收了，店家把號碼重新從頭叫，你的 ${sub.targetNumber} 號偶就幫你取消了。下一場的號碼再打 <code>/number</code> 跟偶說，醬子。`;
+  if (outcome === "reached") return reachedText(who, sub.targetNumber);
+  if (outcome === "expired") return expiredText(who, sub.targetNumber);
+  return sessionOverText(who, sub.targetNumber);
 }
 
 /** Called every minute: announce reached numbers, drop subscriptions older than five hours or from a finished session. */

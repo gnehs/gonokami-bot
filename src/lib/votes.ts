@@ -13,6 +13,7 @@ import {
 } from "./poll.ts";
 import { escapeHtml, type CallbackQuery, type Message, type Poll, type PollAnswer } from "./telegram.ts";
 import { rememberUser } from "./store.ts";
+import { pollAlreadyClosedText, ramenResultFooter, ramenResultHeader, stopNotOwnerText, voteResultText } from "./voice.ts";
 
 type StoredPoll = {
   id: string;
@@ -64,9 +65,9 @@ export async function handleVoteCommand(message: Message, kind: PollKind, args: 
 function resultText(poll: Poll, kind: PollKind): string {
   const tally = tallyOptions(poll.options.map((option) => ({ text: option.text, voterCount: option.voter_count })));
   const title = `<b>${escapeHtml(poll.question)}</b>`;
-  if (kind === "vote") return `${title} 投票結束，醬子共 ${tally.people} 個人要ㄘ。🥳`;
+  if (kind === "vote") return voteResultText(title, tally.people);
   const lines = Object.entries(tally.items).map(([item, count]) => `${escapeHtml(item)}：${count} 人`);
-  return `${title} 點餐結果，挖賽！🤩\n${lines.join("\n")}\n———\n共 ${tally.people} 個人，醬子。🥳`;
+  return `${ramenResultHeader(title)}\n${lines.join("\n")}\n———\n${ramenResultFooter(tally.people)}`;
 }
 
 /** The stop button only works for whoever opened the poll; legacy polls with no recorded creator stop for anyone. */
@@ -80,7 +81,7 @@ export async function handleStopPoll(query: CallbackQuery, legacyKind: PollKind 
     .then((rows: StoredPoll[]) => rows.find((row) => row.chatId === message.chat.id) ?? null);
 
   if (stored?.creatorId && stored.creatorId !== query.from.id) {
-    return api.answerCallbackQuery({ callback_query_id: query.id, text: "🗣️ 告老師喔，只有發起人才能結束投票，你很奇欸。" });
+    return api.answerCallbackQuery({ callback_query_id: query.id, text: stopNotOwnerText() });
   }
 
   let poll: Poll;
@@ -88,7 +89,7 @@ export async function handleStopPoll(query: CallbackQuery, legacyKind: PollKind 
     poll = await api.stopPoll({ chat_id: message.chat.id, message_id: message.message_id });
   } catch (error) {
     if (error instanceof BotApiError && error.code === 400) {
-      return api.answerCallbackQuery({ callback_query_id: query.id, text: "這個投票已經結束了，醬子。" });
+      return api.answerCallbackQuery({ callback_query_id: query.id, text: pollAlreadyClosedText() });
     }
     throw error;
   }
