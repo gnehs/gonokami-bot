@@ -1,7 +1,7 @@
 import { db, api, fetch, BotApiError } from "sdk";
 import { and, eq, gte, sql } from "sdk/db";
 import { chats, kv, memberships, observations, queueDays, users } from "../schema.ts";
-import { buildDay, buildModel, predictWaitMinutes, splitSessions, type Model, type ModelDay, type Observation } from "./predict.ts";
+import { buildDay, buildModel, callTimeAfter, predictWait, splitSessions, type CallTime, type Model, type ModelDay, type Observation } from "./predict.ts";
 import { parseQueueResponse, QUEUE_URL, type QueueReading } from "./queue.ts";
 import { chatTitle, isMemberStatus, type Chat, type User } from "./telegram.ts";
 import { taipeiMidnight, taipeiParts } from "./time.ts";
@@ -79,8 +79,8 @@ export async function currentSession(now: number): Promise<ModelDay | null> {
   return sessions.length ? buildDay(sessions[sessions.length - 1]) : null;
 }
 
-export async function predictCallTime(current: number, target: number, now = Date.now()): Promise<number> {
-  return now + predictWaitMinutes(await loadModel(), now, current, target) * 60_000;
+export async function predictCallTime(current: number, target: number, now = Date.now()): Promise<CallTime> {
+  return callTimeAfter(now, predictWait(await loadModel(), now, current, target));
 }
 
 /** Private chats belong to their one user; groups ask Telegram, cached for ten minutes. */

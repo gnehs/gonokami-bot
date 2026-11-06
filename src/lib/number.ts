@@ -49,7 +49,9 @@ async function deleteSubscription(sub: Subscription): Promise<boolean> {
 async function predictionLine(reading: QueueReading, target: number): Promise<string> {
   if (target <= reading.number) return "\n🕒 換場重新叫號後，偶才算得出預估時間。";
   try {
-    return `\n🕒 預估叫號時間 <b>${formatClock(await predictCallTime(reading.number, target))}</b>`;
+    const { likely, earliest, latest } = await predictCallTime(reading.number, target);
+    const range = earliest < latest ? `（大概 ${formatClock(earliest)}–${formatClock(latest)}）` : "";
+    return `\n🕒 預估叫號時間 <b>${formatClock(likely)}</b>${range}`;
   } catch (error) {
     console.error("prediction failed", error);
     return "\n預測叫號時間暫時不可用，晚點再試。";

@@ -132,16 +132,19 @@ function queueFor(target: string | undefined): QueueResult {
     number += 1 + Math.floor(rand() * 3);
   }
   const current = points[points.length - 1][0];
-  const eta = (n: number) => now + Math.max(0, n - current) * 3.4 * 60_000;
+  const eta = (n: number) => {
+    const wait = Math.max(0, n - current) * 3.4 * 60_000;
+    return { likely: now + wait, earliest: now + wait * 0.7, latest: now + wait * 1.6 };
+  };
   const t = target && /^\d{4}$/.test(target) && +target >= 1001 && +target <= 1200 ? +target : null;
   return {
     reading: { number: current, changedAt: now - 4 * 60_000 },
     today: points,
-    prediction: t ? { target: t, at: eta(t) } : null,
+    prediction: t ? { target: t, ...eta(t) } : null,
     accuracy: { sampleCount: 1280, dayCount: 43, medianAbsErrorMinutes: 6.4, within10MinutesRate: 0.82 },
     subscriptions: [
-      { chatTitle: CHATS[1].title, targetNumber: current + 12, waitsForReset: false, predictedAt: eta(current + 12) },
-      { chatTitle: "私訊", targetNumber: current + 40, waitsForReset: false, predictedAt: eta(current + 40) },
+      { chatTitle: CHATS[1].title, targetNumber: current + 12, waitsForReset: false, predicted: eta(current + 12) },
+      { chatTitle: "私訊", targetNumber: current + 40, waitsForReset: false, predicted: eta(current + 40) },
     ],
   };
 }

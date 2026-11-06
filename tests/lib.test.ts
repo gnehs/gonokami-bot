@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDay, buildModel, buildSessions, callingSegments, historyBefore, predictWaitMinutes, scoreDay, sessionKey, splitSessions, summarizeAccuracy, type Observation } from "../src/lib/predict.ts";
+import { buildDay, buildModel, buildSessions, callingSegments, historyBefore, predictWait, scoreDay, sessionKey, splitSessions, summarizeAccuracy, type Observation } from "../src/lib/predict.ts";
 import { BYE_OPTIONS, detectKind, parseOption, tallyOptions, tallyVoter } from "../src/lib/poll.ts";
 import { buildChatRetro, retroYear } from "../src/lib/retro.ts";
 import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
@@ -25,7 +25,7 @@ test("taipei time uses UTC+8 regardless of host zone", () => {
 
 test("prediction follows the pace of historical days", () => {
   const days = ["2026-10-01", "2026-10-08", "2026-10-15"].map((date) => buildDay(steadyDay(date, 4))!);
-  const wait = predictWaitMinutes(buildModel(days), at("2026-10-22", "11:40"), 1011, 1021);
+  const wait = predictWait(buildModel(days), at("2026-10-22", "11:40"), 1011, 1021).likely;
   assert.equal(Math.round(wait), 40);
 });
 
@@ -35,14 +35,21 @@ test("history is lined up by clock time, so a dinner restarting at 1001 follows 
     buildSessions([...steadyDay(date, 2, "11:00", 50), { observedAt: at(date, "16:30"), number: 1000 }, ...steadyDay(date, 5, "17:00", 40)])
   );
   const model = buildModel(days);
-  assert.equal(Math.round(predictWaitMinutes(model, at("2026-10-22", "11:20"), 1011, 1021)), 20);
-  assert.equal(Math.round(predictWaitMinutes(model, at("2026-10-22", "17:50"), 1011, 1021)), 50);
+  assert.equal(Math.round(predictWait(model, at("2026-10-22", "11:20"), 1011, 1021).likely), 20);
+  assert.equal(Math.round(predictWait(model, at("2026-10-22", "17:50"), 1011, 1021).likely), 50);
+});
+
+test("the range leans late when some past days ran slow", () => {
+  const days = ["2026-09-24", "2026-10-01", "2026-10-08", "2026-10-15"].map((date) => buildDay(steadyDay(date, 2))!);
+  days.push(buildDay(steadyDay("2026-10-22", 6))!);
+  const wait = predictWait(buildModel(days), at("2026-10-29", "11:20"), 1011, 1021);
+  assert.deepEqual([wait.earliest, wait.likely, wait.latest].map(Math.round), [20, 20, 58]);
 });
 
 test("before the first call, the wait runs to when that place in the session is usually reached", () => {
   const days = ["2026-10-01", "2026-10-08", "2026-10-15"].map((date) => buildDay(steadyDay(date, 4, "11:30"))!);
   // 1011 is the eleventh call, 40 minutes after the 11:30 opening.
-  assert.equal(Math.round(predictWaitMinutes(buildModel(days), at("2026-10-22", "10:50"), 1000, 1011)), 80);
+  assert.equal(Math.round(predictWait(buildModel(days), at("2026-10-22", "10:50"), 1000, 1011).likely), 80);
 });
 
 test("calling segments leave out the reset reading, a stale opening number and the afternoon break", () => {

@@ -1,5 +1,5 @@
 // Shapes the Mini App endpoints return; the web app imports these as types only.
-import type { Accuracy, Point } from "./predict.ts";
+import type { Accuracy, CallTime, Point } from "./predict.ts";
 import type { PollKind, Tally } from "./poll.ts";
 import type { QueueReading } from "./queue.ts";
 import type { ChatRetro, QueueRetro } from "./retro.ts";
@@ -30,9 +30,9 @@ export type PollsResult = { polls: PollSummary[]; nextBefore: number | null };
 export type QueueResult = {
   reading: QueueReading | null;
   today: Point[];
-  prediction: { target: number; at: number } | null;
+  prediction: ({ target: number } & CallTime) | null;
   accuracy: Accuracy | null;
-  subscriptions: { chatTitle: string; targetNumber: number; waitsForReset: boolean; predictedAt: number | null }[];
+  subscriptions: { chatTitle: string; targetNumber: number; waitsForReset: boolean; predicted: CallTime | null }[];
 };
 
 export type RetroResult = { chat: ChatRetro; queue: QueueRetro };
@@ -40,4 +40,4 @@ export type RetroResult = { chat: ChatRetro; queue: QueueRetro };
 /** A voter's Telegram profile photo as a data URL, or null when there is none to show. */
 export type Avatar = { userId: number; photo: string | null };
 
-export type { Accuracy, ChatRetro, Point, QueueReading, QueueRetro, Tally };
+export type { Accuracy, CallTime, ChatRetro, Point, QueueReading, QueueRetro, Tally };

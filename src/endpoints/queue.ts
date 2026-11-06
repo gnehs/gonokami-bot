@@ -3,7 +3,7 @@ import { eq } from "sdk/db";
 import { chats, subscriptions } from "../schema.ts";
 import type { QueueResult } from "../lib/api-types.ts";
 import { requireUser, type EndpointContext } from "../lib/guard.ts";
-import { predictWaitMinutes, summarizeAccuracy, type DayScore } from "../lib/predict.ts";
+import { callTimeAfter, predictWait, summarizeAccuracy, type DayScore } from "../lib/predict.ts";
 import { parseTargetNumber } from "../lib/queue.ts";
 import { awaitsReset, type SubscriptionState } from "../lib/subscription.ts";
 import { currentSession, getKv, loadModel, readQueue } from "../lib/store.ts";
@@ -18,7 +18,7 @@ export default async function (input: { target?: string }, ctx: EndpointContext)
     getKv<DayScore[]>("dayScores"),
   ]);
   const predictAt = (target: number) =>
-    reading ? now + predictWaitMinutes(model, now, reading.number, target) * 60_000 : null;
+    reading ? callTimeAfter(now, predictWait(model, now, reading.number, target)) : null;
 
   const subs: (SubscriptionState & { chatId: number })[] = await db
     .select()
@@ -33,11 +33,11 @@ export default async function (input: { target?: string }, ctx: EndpointContext)
 
   const target = parseTargetNumber(input.target);
   // A number the board has passed has no call time until a reset starts the next session.
-  const predictedAt = target !== null && reading && target > reading.number ? predictAt(target) : null;
+  const predicted = target !== null && reading && target > reading.number ? predictAt(target) : null;
   return {
     reading,
     today: today?.points ?? [],
-    prediction: target !== null && predictedAt !== null ? { target, at: predictedAt } : null,
+    prediction: target !== null && predicted !== null ? { target, ...predicted } : null,
     accuracy: summarizeAccuracy(scores ?? []),
     subscriptions: subs.map((sub) => {
       const waitsForReset = reading !== null && awaitsReset(sub, reading.number);
@@ -45,7 +45,7 @@ export default async function (input: { target?: string }, ctx: EndpointContext)
         chatTitle: titles.get(sub.chatId) ?? "私訊",
         targetNumber: sub.targetNumber,
         waitsForReset,
-        predictedAt: waitsForReset ? null : predictAt(sub.targetNumber),
+        predicted: waitsForReset ? null : predictAt(sub.targetNumber),
       };
     }),
   };

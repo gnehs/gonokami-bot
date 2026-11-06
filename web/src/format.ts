@@ -42,6 +42,11 @@ export function formatPredicted(ms: number): string {
   return isToday(ms) ? `今天 ${formatTime(ms)}` : formatDateTime(ms);
 }
 
+/** "12:05–12:30"; a range ending on another day keeps its dates. */
+export function formatRange(from: number, to: number): string {
+  return isToday(from) && isToday(to) ? `${formatTime(from)}–${formatTime(to)}` : `${formatPredicted(from)}–${formatPredicted(to)}`;
+}
+
 export function formatMinuteOfDay(minute: number): string {
   const h = Math.floor(minute / 60);
   const m = Math.round(minute % 60);

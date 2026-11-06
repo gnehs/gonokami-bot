@@ -1,8 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { Point, QueueResult } from "../../src/lib/api-types.ts";
+import type { CallTime, Point, QueueResult } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
 import { QueueChart } from "./Chart.tsx";
-import { formatAgo, formatDateTime, formatPredicted, isToday } from "./format.ts";
+import { formatAgo, formatDateTime, formatPredicted, formatRange, isToday } from "./format.ts";
 import { Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError, useRemote } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
 
@@ -16,6 +16,11 @@ const CLOCK = glyph(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 1.5" 
 const BELL = glyph(<><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>);
 
 /** Tickets called per hour across this session's readings, or null before there is a span to measure. */
+/** About four in five calls land inside this range; it leans late because the board runs late more often than early. */
+function RangeDetail({ earliest, latest }: CallTime) {
+  return <span className="num text-hint">{earliest < latest ? formatRange(earliest, latest) : "預計叫到"}</span>;
+}
+
 function pace(today: Point[]): { called: number; perHour: number } | null {
   if (today.length < 2) return null;
   const sorted = [...today].sort((a, b) => a[1] - b[1]);
@@ -122,7 +127,13 @@ export function Queue() {
                 </span>
               </form>
               {prediction && (
-                <Row icon={<IconBubble>{CLOCK}</IconBubble>} title={`${prediction.target} 號`} subtitle="預計叫到" value={formatPredicted(prediction.at)} />
+                <Row
+                  icon={<IconBubble>{CLOCK}</IconBubble>}
+                  title={`${prediction.target} 號`}
+                  subtitle="預計叫到"
+                  value={formatPredicted(prediction.likely)}
+                  detail={<RangeDetail {...prediction} />}
+                />
               )}
             </Group>
             {target !== "" && !valid && target.length === 4 && <p className="mt-2 px-4 text-[13px] text-danger">號碼要在 1001 到 1200 之間喔。</p>}
@@ -144,8 +155,14 @@ export function Queue() {
                 icon={<IconBubble>{BELL}</IconBubble>}
                 title={`${sub.targetNumber} 號`}
                 subtitle={sub.chatTitle}
-                value={calling && sub.predictedAt ? formatPredicted(sub.predictedAt) : "—"}
-                detail={<span className="text-hint">{!calling ? "等開始叫號" : sub.waitsForReset ? "等換場" : sub.predictedAt ? "預計叫到" : "還算不出來"}</span>}
+                value={calling && sub.predicted ? formatPredicted(sub.predicted.likely) : "—"}
+                detail={
+                  calling && sub.predicted ? (
+                    <RangeDetail {...sub.predicted} />
+                  ) : (
+                    <span className="text-hint">{!calling ? "等開始叫號" : sub.waitsForReset ? "等換場" : "還算不出來"}</span>
+                  )
+                }
               />
             ))}
           </Group>

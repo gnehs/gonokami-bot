@@ -39,6 +39,17 @@ export type Segment = {
 
 export type Model = { segments: Segment[]; minutesPerTicket: number };
 
+/** Minutes until a number is called: the likeliest wait, and the range it lands in about four times in five. */
+export type Wait = { likely: number; earliest: number; latest: number };
+
+/** The same estimate as clock times (epoch ms). */
+export type CallTime = Wait;
+
+export function callTimeAfter(now: number, wait: Wait): CallTime {
+  const at = (minutes: number) => now + minutes * 60_000;
+  return { likely: at(wait.likely), earliest: at(wait.earliest), latest: at(wait.latest) };
+}
+
 export type Accuracy = {
   sampleCount: number;
   dayCount: number;
@@ -53,13 +64,12 @@ function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function weightedMedian(candidates: { value: number; weight: number }[]): number {
-  const sorted = [...candidates].sort((a, b) => a.value - b.value);
-  const half = sorted.reduce((sum, candidate) => sum + candidate.weight, 0) / 2;
+function weightedQuantile(sorted: { value: number; weight: number }[], quantile: number): number {
+  const goal = sorted.reduce((sum, candidate) => sum + candidate.weight, 0) * quantile;
   let running = 0;
   for (const candidate of sorted) {
     running += candidate.weight;
-    if (running >= half) return candidate.value;
+    if (running >= goal) return candidate.value;
   }
   return sorted[sorted.length - 1].value;
 }
@@ -198,15 +208,16 @@ function similarity(segment: Segment, weekday: number, nowDate: string): number 
 }
 
 /**
- * Minutes until `target` is called with the board on `current` at `now`. Every past segment that was
+ * How long until `target` is called with the board on `current` at `now`. Every past segment that was
  * calling at this clock time votes with how long it then took to move as many numbers on; votes are
  * weighted towards the same weekday, the same limited/regular kind of day and recent weeks. Clock time
  * rather than the ticket number lines the sessions up, because each session restarts at 1001.
  * Before the first call (the board on 1000) past sessions vote on the clock time of the target's place
- * in the session instead.
+ * in the session instead. The spread of the votes gives the range: waits run late far more often
+ * than early, so a symmetric spread around the likeliest wait would be wrong on both sides.
  */
-export function predictWaitMinutes(model: Model, now: number, current: number, target: number): number {
-  if (target <= current) return 0;
+export function predictWait(model: Model, now: number, current: number, target: number): Wait {
+  if (target <= current) return { likely: 0, earliest: 0, latest: 0 };
   const { minuteOfDay, weekday, dateKey } = taipeiParts(now);
   const lead = target - current;
   const candidates: { value: number; weight: number }[] = [];
@@ -225,8 +236,13 @@ export function predictWaitMinutes(model: Model, now: number, current: number, t
       if (minute !== null) candidates.push({ value: minute - minuteOfDay, weight: similarity(segment, weekday, dateKey) });
     }
   }
-  if (candidates.length >= MIN_CANDIDATES) return Math.max(0, weightedMedian(candidates));
-  return lead * model.minutesPerTicket;
+  if (candidates.length < MIN_CANDIDATES) {
+    const likely = lead * model.minutesPerTicket;
+    return { likely, earliest: likely, latest: likely };
+  }
+  const sorted = candidates.sort((a, b) => a.value - b.value);
+  const [earliest, likely, latest] = [0.1, 0.5, 0.9].map((quantile) => Math.max(0, weightedQuantile(sorted, quantile)));
+  return { likely, earliest, latest };
 }
 
 const BACKTEST_LEADS = [5, 10, 20, 40];
@@ -251,7 +267,7 @@ export function scoreDay(history: Model, day: ModelDay): DayScore | null {
       for (const lead of BACKTEST_LEADS) {
         const actual = minuteReaching(segment, current + lead);
         if (actual === null) continue;
-        const predicted = predictWaitMinutes(history, dayStart + minute * 60_000, current, current + lead);
+        const predicted = predictWait(history, dayStart + minute * 60_000, current, current + lead).likely;
         errors.push(Math.abs(predicted - (actual - minute)));
       }
     }
