@@ -32,7 +32,7 @@ export type QueueResult = {
   today: Point[];
   prediction: { target: number; at: number } | null;
   accuracy: Accuracy | null;
-  subscriptions: { chatTitle: string; targetNumber: number; predictedAt: number | null }[];
+  subscriptions: { chatTitle: string; targetNumber: number; waitsForReset: boolean; predictedAt: number | null }[];
 };
 
 export type RetroResult = { chat: ChatRetro; queue: QueueRetro };

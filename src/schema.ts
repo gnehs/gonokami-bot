@@ -83,6 +83,8 @@ export const subscriptions = table(
     targetNumber: integer("target_number").notNull(),
     messageId: integer("message_id").notNull(),
     createdAt: integer("created_at").notNull(),
+    // Taken between sessions for a number the board had already passed; it counts only after the next reset.
+    waitsForReset: boolean("waits_for_reset").notNull().default(false),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.chatId, t.userId] }),

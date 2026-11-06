@@ -4,17 +4,14 @@ import { subscriptions } from "../schema.ts";
 import { parseTargetNumber, type QueueReading } from "./queue.ts";
 import { predictCallTime, readQueue, todaySessions } from "./store.ts";
 import { mention, type CallbackQuery, type Message } from "./telegram.ts";
+import { awaitsReset, isBetweenSessions, subscriptionOutcome, type Outcome, type SubscriptionState } from "./subscription.ts";
 import { formatClock } from "./time.ts";
 
-const SUBSCRIPTION_TTL_MS = 5 * 60 * 60 * 1000;
-
-type Subscription = {
+type Subscription = SubscriptionState & {
   chatId: number;
   userId: number;
   firstName: string;
-  targetNumber: number;
   messageId: number;
-  createdAt: number;
 };
 
 function cancelMarkup(userId: number) {
@@ -50,6 +47,7 @@ async function deleteSubscription(sub: Subscription): Promise<boolean> {
 }
 
 async function predictionLine(reading: QueueReading, target: number): Promise<string> {
+  if (target <= reading.number) return "\n🕒 換場重新叫號後，偶才算得出預估時間。";
   try {
     return `\n🕒 預估叫號時間 <b>${formatClock(await predictCallTime(reading.number, target))}</b>`;
   } catch (error) {
@@ -78,7 +76,9 @@ export async function handleNumberCommand(message: Message, arg: string | undefi
 
   if (arg === undefined) {
     if (existing) {
-      text += `\n✅ 你訂閱的 <b>${existing.targetNumber}</b> 號偶記下了，叫到再跟你說，安安。`;
+      text += awaitsReset(existing, reading.number)
+        ? `\n✅ 你訂閱的是下一場的 <b>${existing.targetNumber}</b> 號，換場後叫到再跟你說，安安。`
+        : `\n✅ 你訂閱的 <b>${existing.targetNumber}</b> 號偶記下了，叫到再跟你說，安安。`;
       text += await predictionLine(reading, existing.targetNumber);
       return reply(message, text, { reply_markup: cancelMarkup(from.id) });
     }
@@ -89,7 +89,8 @@ export async function handleNumberCommand(message: Message, arg: string | undefi
   if (target === null) {
     return reply(message, `${text}\n🗣️ 告老師喔！號碼亂打，要輸入 1001 到 1200 的數字啦，你很兩光欸。`);
   }
-  if (target <= reading.number) {
+  const waitsForReset = target <= reading.number;
+  if (waitsForReset && !isBetweenSessions(reading.changedAt, Date.now())) {
     return reply(message, `${text}\n🤡 這位同學，<b>${target}</b> 已經過了，你很奇欸。`);
   }
 
@@ -97,8 +98,11 @@ export async function handleNumberCommand(message: Message, arg: string | undefi
     await deleteSubscription(existing);
     await clearButton(existing.chatId, existing.messageId);
     text += `\n🔁 幫你把叫號通知從 <b>${existing.targetNumber}</b> 改成 <b>${target}</b> 號了，怕的是他。`;
-  } else {
+  } else if (!waitsForReset) {
     text += `\n🔔 <b>${target}</b> 號還沒到，叫到偶會在這裡喊你，怕的是他。`;
+  }
+  if (waitsForReset) {
+    text += `\n⏳ 看板停在 <b>${reading.number}</b> 很久了，這場應該收了。<b>${target}</b> 號偶當成下一場的號碼，等店家換場重新叫到再喊你。`;
   }
   text += await predictionLine(reading, target);
   const sent = await reply(message, text, { reply_markup: cancelMarkup(from.id) });
@@ -109,6 +113,7 @@ export async function handleNumberCommand(message: Message, arg: string | undefi
     targetNumber: target,
     messageId: sent.message_id,
     createdAt: Date.now(),
+    waitsForReset,
   };
   await db
     .insert(subscriptions)
@@ -133,8 +138,6 @@ export async function handleCancelNumber(query: CallbackQuery, ownerId: number) 
   await reply(message, `🚫 哼嗯，偶幫你取消 <b>${sub.targetNumber}</b> 號的訂閱了。醬子。`);
 }
 
-type Outcome = "reached" | "expired" | "sessionOver";
-
 function outcomeText(sub: Subscription, outcome: Outcome): string {
   const who = mention(sub.userId, sub.firstName);
   if (outcome === "reached") return `喂～ 👑 ${who} ，你訂的 ${sub.targetNumber} 號到了，怕的是他。還不快去！`;
@@ -144,33 +147,15 @@ function outcomeText(sub: Subscription, outcome: Outcome): string {
   return `欸 👋 ${who} ，這場收了，店家把號碼重新從頭叫，你的 ${sub.targetNumber} 號偶就幫你取消了。下一場的號碼再打 <code>/number</code> 跟偶說，醬子。`;
 }
 
-/**
- * When the board was last moved in the session before the current one, or null if today has had no reset.
- * A subscription made before then belongs to that finished session; one made after it was waiting for this one.
- */
-async function previousSessionEndedAt(now: number): Promise<number | null> {
-  const sessions = await todaySessions(now);
-  const previous = sessions[sessions.length - 2];
-  return previous ? previous[previous.length - 1].observedAt : null;
-}
-
-function outcomeOf(sub: Subscription, reading: QueueReading, now: number, sessionEndedAt: number | null): Outcome | null {
-  // Expiry is checked first: overnight, the board still shows last night's final number.
-  if (now - sub.createdAt > SUBSCRIPTION_TTL_MS) return "expired";
-  // After a reset the new session counts up through the same numbers, so the old target would fire falsely.
-  if (sessionEndedAt !== null && sub.createdAt < sessionEndedAt) return "sessionOver";
-  return reading.number >= sub.targetNumber ? "reached" : null;
-}
-
 /** Called every minute: announce reached numbers, drop subscriptions older than five hours or from a finished session. */
 export async function notifySubscribers(reading: QueueReading) {
   const subs: Subscription[] = await db.select().from(subscriptions).all();
   if (subs.length === 0) return 0;
   const now = Date.now();
-  const sessionEndedAt = await previousSessionEndedAt(now);
+  const sessions = await todaySessions(now);
   let notified = 0;
   for (const sub of subs) {
-    const outcome = outcomeOf(sub, reading, now, sessionEndedAt);
+    const outcome = subscriptionOutcome(sub, sessions, reading.number, now);
     if (!outcome) continue;
 
     // Whoever deletes the row sends the message, so overlapping ticks never announce twice.

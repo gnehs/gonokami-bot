@@ -145,7 +145,7 @@ export function Queue() {
                 title={`${sub.targetNumber} 號`}
                 subtitle={sub.chatTitle}
                 value={calling && sub.predictedAt ? formatPredicted(sub.predictedAt) : "—"}
-                detail={<span className="text-hint">{!calling ? "等開始叫號" : sub.predictedAt ? "預計叫到" : "還算不出來"}</span>}
+                detail={<span className="text-hint">{!calling ? "等開始叫號" : sub.waitsForReset ? "等換場" : sub.predictedAt ? "預計叫到" : "還算不出來"}</span>}
               />
             ))}
           </Group>

@@ -25,7 +25,7 @@ Mini App 只會顯示你目前還在的群組。每次讀取群組資料前，�
 | `src/` | Bot 程式碼（TypeScript）。`pnpm build:cloud` 會編譯到 `tgcloud/`，也就是平台實際執行的 JS 模組。 |
 | `src/handlers/` | Telegram update handler，檔名就是 update 類型，例如 `message`、`poll_answer`。 |
 | `src/endpoints/` | Mini App 呼叫的 API。`tick` 和 `importHistory` 只接受 `tgcloud run`，Mini App 呼叫會被拒絕。 |
-| `src/lib/` | 共用邏輯。`predict`、`poll`、`retro`、`queue`、`time` 不依賴 SDK，可直接用 `node --test` 測。 |
+| `src/lib/` | 共用邏輯。`predict`、`poll`、`retro`、`queue`、`subscription`、`time` 不依賴 SDK，可直接用 `node --test` 測。 |
 | `web/` | Mini App 前端，build 到 `dist/`，由 tgcloud 一起部署。 |
 | `worker/` | Cloudflare Worker，週五到週日 10:00–21:59 每分鐘觸發一次 `endpoints/tick`。五之神只在這幾天用叫號看板。 |
 | `scripts/` | 歷史資料匯入，以及打包 Worker 用的模組原始碼。 |
@@ -39,6 +39,8 @@ Telegram Serverless 沒有排程功能，所以由 Worker 定時呼叫 tgcloud �
 五之神分午場和晚場，每場開始前會把看板歸零成 1000，再從 1001 重新叫。所以號碼一往回掉，偶就當成新的一場，每場各自是一條叫號曲線。每天收攤後，當天每一場的曲線會併入模型，並跟前幾天的歷史比對、算出準確度。Mini App 顯示的就是最近 60 場的結果。
 
 換場時，上一場還沒叫到的訂閱會被取消，不然晚場從頭叫的時候會誤報。在上一場叫完之後才訂的不算，會留給下一場。
+
+上一場叫完、還沒換場的時候，看板會一直停在最後一號。看板超過 30 分鐘沒動，`/number` 就會接受比看板小的號碼，當成下一場的號碼牌。這種訂閱要等換場後的那一場叫到才通知，換場之前也不算預估時間。
 
 預測時，這一場的曲線如果已經涵蓋目前號碼，就直接沿用這場的速度。否則用歷史曲線加權取中位數，同星期、同類型營業日（五六日限定）、同時段的權重比較高。
 

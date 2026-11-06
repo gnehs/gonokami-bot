@@ -4,6 +4,7 @@ import { buildDay, buildModel, buildSessions, historyBefore, predictWaitMinutes,
 import { BYE_OPTIONS, detectKind, parseOption, tallyOptions, tallyVoter } from "../src/lib/poll.ts";
 import { buildChatRetro, retroYear } from "../src/lib/retro.ts";
 import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
+import { isBetweenSessions, subscriptionOutcome, type SubscriptionState } from "../src/lib/subscription.ts";
 import { formatClock, taipeiParts } from "../src/lib/time.ts";
 import { toBase64 } from "../src/lib/base64.ts";
 
@@ -60,6 +61,36 @@ test("a board reset starts a new session", () => {
 test("a small step back is a correction, not a reset", () => {
   const observations = [1001, 1005, 1003, 1006].map((number, i) => ({ observedAt: at("2026-11-06", "12:00") + i * 60_000, number }));
   assert.equal(splitSessions(observations).length, 1);
+});
+
+/** Replays the minute ticks over a day and reports what first happened to the subscription, and when. */
+function replay(observations: Observation[], sub: SubscriptionState) {
+  for (const tick of observations.filter((o) => o.observedAt > sub.createdAt)) {
+    const seen = observations.filter((o) => o.observedAt <= tick.observedAt);
+    const outcome = subscriptionOutcome(sub, splitSessions(seen), tick.number, tick.observedAt);
+    if (outcome) return `${outcome} ${formatClock(tick.observedAt)}`;
+  }
+  return null;
+}
+
+test("a subscription from a finished session is cancelled at the reset, not fired by the next session", () => {
+  const day = twoSessionDay("2026-11-06");
+  // Lunch ends at 1059, so 1070 is never called; dinner reaching 1001 again must not count for it.
+  const lunch = { targetNumber: 1070, createdAt: at("2026-11-06", "12:00"), waitsForReset: false };
+  assert.equal(replay(day, lunch), "sessionOver 16:33");
+  const early = { targetNumber: 1030, createdAt: at("2026-11-06", "10:20"), waitsForReset: false };
+  assert.equal(replay(day, early), "reached 12:20");
+});
+
+test("a passed number taken in the break waits for the next session", () => {
+  const day = twoSessionDay("2026-11-06");
+  assert.equal(isBetweenSessions(at("2026-11-06", "13:30"), at("2026-11-06", "14:00")), true);
+  assert.equal(isBetweenSessions(at("2026-11-06", "13:30"), at("2026-11-06", "13:45")), false);
+  // Taken at 13:30 with the board on 1059; dinner reaches 1049 at 19:05, over five hours after it was taken.
+  const dinner = { targetNumber: 1049, createdAt: at("2026-11-06", "13:30"), waitsForReset: true };
+  assert.equal(replay(day, dinner), "reached 19:05");
+  const passedAgain = { targetNumber: 1070, createdAt: at("2026-11-06", "13:30"), waitsForReset: true };
+  assert.equal(replay(day, passedAgain), "sessionOver 21:31");
 });
 
 test("a day logged in one burst is not trusted for timing", () => {

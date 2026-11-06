@@ -140,8 +140,8 @@ function queueFor(target: string | undefined): QueueResult {
     prediction: t ? { target: t, at: eta(t) } : null,
     accuracy: { sampleCount: 1280, dayCount: 43, medianAbsErrorMinutes: 6.4, within10MinutesRate: 0.82 },
     subscriptions: [
-      { chatTitle: CHATS[1].title, targetNumber: current + 12, predictedAt: eta(current + 12) },
-      { chatTitle: "私訊", targetNumber: current + 40, predictedAt: eta(current + 40) },
+      { chatTitle: CHATS[1].title, targetNumber: current + 12, waitsForReset: false, predictedAt: eta(current + 12) },
+      { chatTitle: "私訊", targetNumber: current + 40, waitsForReset: false, predictedAt: eta(current + 40) },
     ],
   };
 }

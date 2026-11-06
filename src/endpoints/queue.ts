@@ -5,6 +5,7 @@ import type { QueueResult } from "../lib/api-types.ts";
 import { requireUser, type EndpointContext } from "../lib/guard.ts";
 import { predictWaitMinutes, summarizeAccuracy, type DayScore } from "../lib/predict.ts";
 import { parseTargetNumber } from "../lib/queue.ts";
+import { awaitsReset, type SubscriptionState } from "../lib/subscription.ts";
 import { currentSession, getKv, loadModel, readQueue } from "../lib/store.ts";
 
 export default async function (input: { target?: string }, ctx: EndpointContext): Promise<QueueResult> {
@@ -19,7 +20,7 @@ export default async function (input: { target?: string }, ctx: EndpointContext)
   const predictAt = (target: number) =>
     reading ? now + predictWaitMinutes(model, today, now, reading.number, target) * 60_000 : null;
 
-  const subs: { chatId: number; targetNumber: number }[] = await db
+  const subs: (SubscriptionState & { chatId: number })[] = await db
     .select()
     .from(subscriptions)
     .where(eq(subscriptions.userId, user.id))
@@ -31,16 +32,21 @@ export default async function (input: { target?: string }, ctx: EndpointContext)
   }
 
   const target = parseTargetNumber(input.target);
-  const predictedAt = target !== null ? predictAt(target) : null;
+  // A number the board has passed has no call time until a reset starts the next session.
+  const predictedAt = target !== null && reading && target > reading.number ? predictAt(target) : null;
   return {
     reading,
     today: today?.points ?? [],
     prediction: target !== null && predictedAt !== null ? { target, at: predictedAt } : null,
     accuracy: summarizeAccuracy(scores ?? []),
-    subscriptions: subs.map((sub) => ({
-      chatTitle: titles.get(sub.chatId) ?? "私訊",
-      targetNumber: sub.targetNumber,
-      predictedAt: predictAt(sub.targetNumber),
-    })),
+    subscriptions: subs.map((sub) => {
+      const waitsForReset = reading !== null && awaitsReset(sub, reading.number);
+      return {
+        chatTitle: titles.get(sub.chatId) ?? "私訊",
+        targetNumber: sub.targetNumber,
+        waitsForReset,
+        predictedAt: waitsForReset ? null : predictAt(sub.targetNumber),
+      };
+    }),
   };
 }
