@@ -18,7 +18,7 @@ export default async function (input: { target?: string }, ctx: EndpointContext)
     getKv<DayScore[]>("dayScores"),
   ]);
   const predictAt = (target: number) =>
-    reading ? now + predictWaitMinutes(model, today, now, reading.number, target) * 60_000 : null;
+    reading ? now + predictWaitMinutes(model, now, reading.number, target) * 60_000 : null;
 
   const subs: (SubscriptionState & { chatId: number })[] = await db
     .select()

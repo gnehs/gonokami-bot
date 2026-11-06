@@ -80,8 +80,7 @@ export async function currentSession(now: number): Promise<ModelDay | null> {
 }
 
 export async function predictCallTime(current: number, target: number, now = Date.now()): Promise<number> {
-  const [model, today] = await Promise.all([loadModel(), currentSession(now)]);
-  return now + predictWaitMinutes(model, today, now, current, target) * 60_000;
+  return now + predictWaitMinutes(await loadModel(), now, current, target) * 60_000;
 }
 
 /** Private chats belong to their one user; groups ask Telegram, cached for ten minutes. */

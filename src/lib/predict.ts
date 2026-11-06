@@ -2,11 +2,14 @@ import { MIN_NUMBER } from "./queue.ts";
 import { formatClock, taipeiParts } from "./time.ts";
 
 const DEFAULT_MINUTES_PER_TICKET = 3;
-// A day counts only if the board was watched closely for a real stretch; the old monitor often
-// logged a whole morning under one timestamp, which says nothing about when numbers were called.
-const MIN_TIMING_DURATION_MINUTES = 120;
-const MIN_TIMING_POINTS = 15;
-const NUMBER_RANGE_SLACK = 20;
+// The board sitting this long is a break, the wait before opening, or a stale reading, not calling.
+const CALLING_GAP_MINUTES = 45;
+const MIN_SEGMENT_MINUTES = 40;
+const MIN_SEGMENT_POINTS = 8;
+// Sessions starting after this are dinner; the board is reset to 1000 before each session opens.
+const DINNER_FROM_MINUTE = 14 * 60;
+const MIN_CANDIDATES = 3;
+const HISTORY_HALF_LIFE_DAYS = 250;
 // Smaller drops are the staff correcting a mis-press, not the board starting a new session.
 const RESET_MIN_DROP = 10;
 
@@ -21,16 +24,20 @@ export type ModelDay = {
   isLimitedDay: boolean;
   firstNumber: number;
   lastNumber: number;
-  medianMinutesPerTicket: number | null;
   usableForTiming: boolean;
   points: Point[];
 };
 
-export type Model = {
-  days: ModelDay[];
-  globalMedianMinutesPerTicket: number | null;
-  weekdayMedianMinutesPerTicket: (number | null)[];
+/** A stretch of a session in which the board kept moving; predictions never reach across a pause. */
+export type Segment = {
+  date: string;
+  weekday: number;
+  isLimitedDay: boolean;
+  isDinner: boolean;
+  points: Point[];
 };
+
+export type Model = { segments: Segment[]; minutesPerTicket: number };
 
 export type Accuracy = {
   sampleCount: number;
@@ -44,6 +51,17 @@ function median(values: number[]): number | null {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function weightedMedian(candidates: { value: number; weight: number }[]): number {
+  const sorted = [...candidates].sort((a, b) => a.value - b.value);
+  const half = sorted.reduce((sum, candidate) => sum + candidate.weight, 0) / 2;
+  let running = 0;
+  for (const candidate of sorted) {
+    running += candidate.weight;
+    if (running >= half) return candidate.value;
+  }
+  return sorted[sorted.length - 1].value;
 }
 
 export function isLimitedWeekday(weekday: number): boolean {
@@ -75,6 +93,30 @@ export function sessionKey(day: ModelDay): string {
   return `${day.date} ${formatClock(Date.parse(`${day.date}T00:00:00+08:00`) + day.points[0][1] * 60_000)}`;
 }
 
+/**
+ * The stretches of a session in which numbers were really being called. The reset reading (1000),
+ * a number left on the board from before opening and the afternoon break all fall outside them.
+ */
+export function callingSegments(day: ModelDay): Segment[] {
+  const runs: Point[][] = [];
+  for (const point of day.points) {
+    if (point[0] < MIN_NUMBER) continue;
+    const run = runs[runs.length - 1];
+    const last = run?.[run.length - 1];
+    if (last && point[1] - last[1] < CALLING_GAP_MINUTES) run.push(point);
+    else runs.push([point]);
+  }
+  return runs
+    .filter((points) => points.length >= MIN_SEGMENT_POINTS && points[points.length - 1][1] - points[0][1] >= MIN_SEGMENT_MINUTES)
+    .map((points) => ({
+      date: day.date,
+      weekday: day.weekday,
+      isLimitedDay: day.isLimitedDay,
+      isDinner: points[0][1] >= DINNER_FROM_MINUTE,
+      points,
+    }));
+}
+
 /** One session's service curve from the observations taken during it. */
 export function buildDay(observations: Observation[]): ModelDay | null {
   const sorted = [...observations].sort((a, b) => a.observedAt - b.observedAt);
@@ -88,25 +130,17 @@ export function buildDay(observations: Observation[]): ModelDay | null {
   if (points.length === 0) return null;
 
   const { dateKey, weekday } = taipeiParts(sorted[0].observedAt);
-  const slopes: number[] = [];
-  for (let i = 1; i < points.length; i += 1) {
-    slopes.push((points[i][1] - points[i - 1][1]) / (points[i][0] - points[i - 1][0]));
-  }
-  const first = points[0];
-  const last = points[points.length - 1];
-
-  return {
+  const day: ModelDay = {
     date: dateKey,
     weekday,
     isLimitedDay: isLimitedWeekday(weekday),
-    firstNumber: first[0],
-    lastNumber: last[0],
-    medianMinutesPerTicket: median(slopes.filter((slope) => slope > 0)),
-    usableForTiming:
-      last[1] - first[1] >= MIN_TIMING_DURATION_MINUTES &&
-      points.length >= MIN_TIMING_POINTS,
+    firstNumber: points[0][0],
+    lastNumber: points[points.length - 1][0],
+    usableForTiming: false,
     points,
   };
+  day.usableForTiming = callingSegments(day).length > 0;
+  return day;
 }
 
 export function groupByDay(observations: Observation[]): Map<string, Observation[]> {
@@ -120,111 +154,106 @@ export function groupByDay(observations: Observation[]): Map<string, Observation
   return byDay;
 }
 
+function modelOf(segments: Segment[]): Model {
+  const rates = segments.map(({ points }) => {
+    const [firstNumber, firstMinute] = points[0];
+    const [lastNumber, lastMinute] = points[points.length - 1];
+    return (lastMinute - firstMinute) / (lastNumber - firstNumber);
+  });
+  return { segments, minutesPerTicket: median(rates) ?? DEFAULT_MINUTES_PER_TICKET };
+}
+
 export function buildModel(days: ModelDay[]): Model {
-  const timingDays = days.filter((day) => day.usableForTiming);
-  const rates = (list: ModelDay[]) =>
-    list.flatMap((day) => (day.medianMinutesPerTicket ? [day.medianMinutesPerTicket] : []));
-  return {
-    days,
-    globalMedianMinutesPerTicket: median(rates(timingDays)),
-    weekdayMedianMinutesPerTicket: Array.from({ length: 7 }, (_, weekday) =>
-      median(rates(timingDays.filter((day) => day.weekday === weekday)))
-    ),
-  };
+  return modelOf(days.flatMap(callingSegments));
 }
 
-function interpolateMinute(day: ModelDay, number: number): number {
-  const { points } = day;
-  if (number <= points[0][0]) return points[0][1];
-  for (let i = 1; i < points.length; i += 1) {
-    const [rightNumber, rightMinute] = points[i];
-    if (number <= rightNumber) {
-      const [leftNumber, leftMinute] = points[i - 1];
-      const ratio = (number - leftNumber) / (rightNumber - leftNumber);
-      return leftMinute + ratio * (rightMinute - leftMinute);
-    }
-  }
-  const [lastNumber, lastMinute] = points[points.length - 1];
-  return lastMinute + (number - lastNumber) * (day.medianMinutesPerTicket ?? DEFAULT_MINUTES_PER_TICKET);
+export function historyBefore(model: Model, date: string): Model {
+  return modelOf(model.segments.filter((segment) => segment.date < date));
 }
 
-function weightedMedian(candidates: { wait: number; weight: number }[]): number {
-  const sorted = [...candidates].sort((a, b) => a.wait - b.wait);
-  const half = sorted.reduce((sum, candidate) => sum + candidate.weight, 0) / 2;
-  let running = 0;
-  for (const candidate of sorted) {
-    running += candidate.weight;
-    if (running >= half) return candidate.wait;
+/** The number the board showed at `minute`, or null outside the segment. */
+function numberAt(segment: Segment, minute: number): number | null {
+  const { points } = segment;
+  if (minute < points[0][1] || minute > points[points.length - 1][1]) return null;
+  let shown = points[0][0];
+  for (const [number, at] of points) {
+    if (at > minute) break;
+    shown = number;
   }
-  return sorted[sorted.length - 1].wait;
+  return shown;
+}
+
+/** The minute the board first showed `number` or higher, or null if the segment never got there. */
+function minuteReaching(segment: Segment, number: number): number | null {
+  return segment.points.find((point) => point[0] >= number)?.[1] ?? null;
+}
+
+function similarity(segment: Segment, weekday: number, nowDate: string): number {
+  const ageDays = (Date.parse(nowDate) - Date.parse(segment.date)) / 86_400_000;
+  return (
+    (segment.weekday === weekday ? 2 : 1) *
+    (segment.isLimitedDay === isLimitedWeekday(weekday) ? 1.5 : 0.75) *
+    0.5 ** (ageDays / HISTORY_HALF_LIFE_DAYS)
+  );
 }
 
 /**
- * Minutes until `target` is called. `today` is the partial curve of the session under way;
- * when it covers the current number it is trusted outright, otherwise history votes,
- * weighted towards the same weekday, the same limited/regular kind of day and the same clock time.
+ * Minutes until `target` is called with the board on `current` at `now`. Every past segment that was
+ * calling at this clock time votes with how long it then took to move as many numbers on; votes are
+ * weighted towards the same weekday, the same limited/regular kind of day and recent weeks. Clock time
+ * rather than the ticket number lines the sessions up, because each session restarts at 1001.
+ * Before the first call (the board on 1000) past sessions vote on the clock time of the target's place
+ * in the session instead.
  */
-export function predictWaitMinutes(
-  model: Model,
-  today: ModelDay | null,
-  now: number,
-  current: number,
-  target: number
-): number {
+export function predictWaitMinutes(model: Model, now: number, current: number, target: number): number {
   if (target <= current) return 0;
-  const near = (day: ModelDay) =>
-    current >= day.firstNumber - NUMBER_RANGE_SLACK && current <= day.lastNumber + NUMBER_RANGE_SLACK;
-  const waitOn = (day: ModelDay) =>
-    Math.max(0, interpolateMinute(day, target) - interpolateMinute(day, current));
+  const { minuteOfDay, weekday, dateKey } = taipeiParts(now);
+  const lead = target - current;
+  const candidates: { value: number; weight: number }[] = [];
 
-  if (today?.usableForTiming && near(today) && target <= today.lastNumber) {
-    return waitOn(today);
+  if (current < MIN_NUMBER) {
+    const isDinner = minuteOfDay >= DINNER_FROM_MINUTE;
+    for (const segment of model.segments) {
+      if (segment.isDinner !== isDinner) continue;
+      const minute = minuteReaching(segment, segment.points[0][0] + target - MIN_NUMBER);
+      if (minute !== null) candidates.push({ value: minute - minuteOfDay, weight: similarity(segment, weekday, dateKey) });
+    }
+  } else {
+    for (const segment of model.segments) {
+      const shown = numberAt(segment, minuteOfDay);
+      const minute = shown === null ? null : minuteReaching(segment, shown + lead);
+      if (minute !== null) candidates.push({ value: minute - minuteOfDay, weight: similarity(segment, weekday, dateKey) });
+    }
   }
-
-  const { weekday, minuteOfDay } = taipeiParts(now);
-  const limited = isLimitedWeekday(weekday);
-  const candidates = model.days.filter(near).map((day) => {
-    const clockDiff = Math.abs(interpolateMinute(day, current) - minuteOfDay);
-    return {
-      wait: waitOn(day),
-      weight:
-        (day.weekday === weekday ? 2.75 : 1) *
-        (day.isLimitedDay === limited ? 1.7 : 0.75) *
-        (1 / (1 + clockDiff / 45)) *
-        (target <= day.lastNumber ? 1 : 0.45),
-    };
-  });
-  if (today?.usableForTiming && near(today)) {
-    candidates.push({ wait: waitOn(today), weight: candidates.length || 1 });
-  }
-  if (candidates.length > 0) return weightedMedian(candidates);
-
-  const rate =
-    model.weekdayMedianMinutesPerTicket[weekday] ??
-    model.globalMedianMinutesPerTicket ??
-    DEFAULT_MINUTES_PER_TICKET;
-  return (target - current) * rate;
+  if (candidates.length >= MIN_CANDIDATES) return Math.max(0, weightedMedian(candidates));
+  return lead * model.minutesPerTicket;
 }
 
 const BACKTEST_LEADS = [5, 10, 20, 40];
+const BACKTEST_STEP_MINUTES = 3;
 
 export type DayScore = { date: string; samples: number; within10: number; medianAbsError: number };
 
 /**
- * Replays one finished day against the history before it: at each observed number,
- * predict when a later number is called and compare with when it actually was.
- * Scoring one day at a time keeps each run far below the platform's ~3 s CPU budget.
+ * Replays one finished session against the history before it, the way people use the board: every
+ * few minutes while numbers were being called, predict when a later number of the same stretch is
+ * called and compare with when it actually was. One session at a time stays far below the
+ * platform's ~3 s CPU budget.
  */
 export function scoreDay(history: Model, day: ModelDay): DayScore | null {
-  if (!day.usableForTiming || history.days.length === 0) return null;
+  if (history.segments.length === 0) return null;
   const dayStart = Date.parse(`${day.date}T00:00:00+08:00`);
   const errors: number[] = [];
-  for (const [current, minute] of day.points) {
-    for (const lead of BACKTEST_LEADS) {
-      const target = current + lead;
-      if (target > day.lastNumber) continue;
-      const predicted = predictWaitMinutes(history, null, dayStart + minute * 60_000, current, target);
-      errors.push(Math.abs(predicted - (interpolateMinute(day, target) - minute)));
+  for (const segment of callingSegments(day)) {
+    const end = segment.points[segment.points.length - 1][1];
+    for (let minute = segment.points[0][1]; minute < end; minute += BACKTEST_STEP_MINUTES) {
+      const current = numberAt(segment, minute)!;
+      for (const lead of BACKTEST_LEADS) {
+        const actual = minuteReaching(segment, current + lead);
+        if (actual === null) continue;
+        const predicted = predictWaitMinutes(history, dayStart + minute * 60_000, current, current + lead);
+        errors.push(Math.abs(predicted - (actual - minute)));
+      }
     }
   }
   if (errors.length === 0) return null;
@@ -245,8 +274,4 @@ export function summarizeAccuracy(scores: DayScore[]): Accuracy | null {
     medianAbsErrorMinutes: median(scores.map((score) => score.medianAbsError)) ?? 0,
     within10MinutesRate: scores.reduce((sum, score) => sum + score.within10, 0) / samples,
   };
-}
-
-export function historyBefore(model: Model, date: string): Model {
-  return buildModel(model.days.filter((day) => day.date < date));
 }

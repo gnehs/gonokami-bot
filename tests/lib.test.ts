@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDay, buildModel, buildSessions, historyBefore, predictWaitMinutes, scoreDay, sessionKey, splitSessions, summarizeAccuracy, type Observation } from "../src/lib/predict.ts";
+import { buildDay, buildModel, buildSessions, callingSegments, historyBefore, predictWaitMinutes, scoreDay, sessionKey, splitSessions, summarizeAccuracy, type Observation } from "../src/lib/predict.ts";
 import { BYE_OPTIONS, detectKind, parseOption, tallyOptions, tallyVoter } from "../src/lib/poll.ts";
 import { buildChatRetro, retroYear } from "../src/lib/retro.ts";
 import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
@@ -10,9 +10,9 @@ import { toBase64 } from "../src/lib/base64.ts";
 
 const at = (date: string, clock: string) => Date.parse(`${date}T${clock}:00+08:00`);
 
-function steadyDay(date: string, minutesPerTicket: number): Observation[] {
-  return Array.from({ length: 60 }, (_, i) => ({
-    observedAt: at(date, "11:00") + i * minutesPerTicket * 60_000,
+function steadyDay(date: string, minutesPerTicket: number, start = "11:00", count = 60): Observation[] {
+  return Array.from({ length: count }, (_, i) => ({
+    observedAt: at(date, start) + i * minutesPerTicket * 60_000,
     number: 1001 + i,
   }));
 }
@@ -25,15 +25,34 @@ test("taipei time uses UTC+8 regardless of host zone", () => {
 
 test("prediction follows the pace of historical days", () => {
   const days = ["2026-10-01", "2026-10-08", "2026-10-15"].map((date) => buildDay(steadyDay(date, 4))!);
-  const model = buildModel(days);
-  const wait = predictWaitMinutes(model, null, at("2026-10-22", "11:40"), 1011, 1021);
+  const wait = predictWaitMinutes(buildModel(days), at("2026-10-22", "11:40"), 1011, 1021);
   assert.equal(Math.round(wait), 40);
 });
 
-test("today's own curve wins once it covers the numbers", () => {
-  const model = buildModel(["2026-10-01", "2026-10-08"].map((date) => buildDay(steadyDay(date, 4))!));
-  const today = buildDay(steadyDay("2026-10-22", 3))!;
-  assert.equal(Math.round(predictWaitMinutes(model, today, at("2026-10-22", "11:30"), 1011, 1021)), 30);
+test("history is lined up by clock time, so a dinner restarting at 1001 follows dinner pace", () => {
+  // Lunch called a ticket every 2 minutes from 11:00, dinner one every 5 minutes from 17:00.
+  const days = ["2026-10-01", "2026-10-08", "2026-10-15"].flatMap((date) =>
+    buildSessions([...steadyDay(date, 2, "11:00", 50), { observedAt: at(date, "16:30"), number: 1000 }, ...steadyDay(date, 5, "17:00", 40)])
+  );
+  const model = buildModel(days);
+  assert.equal(Math.round(predictWaitMinutes(model, at("2026-10-22", "11:20"), 1011, 1021)), 20);
+  assert.equal(Math.round(predictWaitMinutes(model, at("2026-10-22", "17:50"), 1011, 1021)), 50);
+});
+
+test("before the first call, the wait runs to when that place in the session is usually reached", () => {
+  const days = ["2026-10-01", "2026-10-08", "2026-10-15"].map((date) => buildDay(steadyDay(date, 4, "11:30"))!);
+  // 1011 is the eleventh call, 40 minutes after the 11:30 opening.
+  assert.equal(Math.round(predictWaitMinutes(buildModel(days), at("2026-10-22", "10:50"), 1000, 1011)), 80);
+});
+
+test("calling segments leave out the reset reading, a stale opening number and the afternoon break", () => {
+  const day = buildDay([
+    { observedAt: at("2026-10-31", "10:00"), number: 1032 },
+    ...Array.from({ length: 20 }, (_, i) => ({ observedAt: at("2026-10-31", "12:15") + i * 4 * 60_000, number: 1033 + i })),
+    ...Array.from({ length: 20 }, (_, i) => ({ observedAt: at("2026-10-31", "16:05") + i * 4 * 60_000, number: 1053 + i })),
+  ])!;
+  const segments = callingSegments(day);
+  assert.deepEqual(segments.map((segment) => [segment.points[0][0], segment.isDinner]), [[1033, false], [1053, true]]);
 });
 
 // Shaped like 2026-11-06: reset at 10:37, lunch to 1060, reset at 16:33, dinner to 1062, reset at closing.
@@ -101,10 +120,9 @@ test("a day logged in one burst is not trusted for timing", () => {
 });
 
 test("day-by-day scoring reports small error on perfectly regular history", () => {
-  const model = buildModel(
-    ["2026-09-03", "2026-09-10", "2026-09-17", "2026-09-24"].map((date) => buildDay(steadyDay(date, 3))!)
-  );
-  const scores = model.days.flatMap((day) => scoreDay(historyBefore(model, day.date), day) ?? []);
+  const days = ["2026-09-03", "2026-09-10", "2026-09-17", "2026-09-24"].map((date) => buildDay(steadyDay(date, 3))!);
+  const model = buildModel(days);
+  const scores = days.flatMap((day) => scoreDay(historyBefore(model, day.date), day) ?? []);
   const accuracy = summarizeAccuracy(scores)!;
   assert.equal(accuracy.dayCount, 3);
   assert.ok(accuracy.sampleCount > 0);
