@@ -7,6 +7,7 @@ import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
 import { isBetweenSessions, subscriptionOutcome, type SubscriptionState } from "../src/lib/subscription.ts";
 import { formatClock, taipeiParts } from "../src/lib/time.ts";
 import { toBase64 } from "../src/lib/base64.ts";
+import { nextSessionText, predictionFailedText, predictionText } from "../src/lib/voice.ts";
 
 const at = (date: string, clock: string) => Date.parse(`${date}T${clock}:00+08:00`);
 
@@ -208,4 +209,26 @@ test("base64 matches Node's encoder for every padding length", () => {
     const bytes = new TextEncoder().encode(text);
     assert.equal(toBase64(bytes), Buffer.from(bytes).toString("base64"), text);
   }
+});
+
+test("every mix of prediction clauses reads as one sentence with the times in it", () => {
+  let seed = 7;
+  const random = () => ((seed = (seed * 48271) % 2147483647) / 2147483647);
+  const times = { likely: "12:12", earliest: "12:05", latest: "12:30" };
+  const seen = new Set<string>();
+  for (let i = 0; i < 3000; i += 1) {
+    const soon = i % 2 === 0;
+    const hasRange = i % 3 !== 0;
+    const text = predictionText(times, { soon, hasRange }, random);
+    seen.add(text);
+    assert.ok(text.includes("<b>12:12</b>"), text);
+    assert.equal(text.includes("12:05") && text.includes("12:30"), hasRange, text);
+    assert.doesNotMatch(text, /[，。！][，。！]|undefined/, text);
+  }
+  assert.ok(seen.size > 200, `only ${seen.size} distinct lines`);
+  assert.equal(
+    predictionText(times, { soon: false, hasRange: true }, () => 0),
+    "🐻 偶用熊鼻子聞了一下，大概 <b>12:12</b> 會叫到你，最早 12:05、最晚 12:30，醬子。"
+  );
+  assert.ok(nextSessionText(() => 0.99) && predictionFailedText(() => 0.99));
 });

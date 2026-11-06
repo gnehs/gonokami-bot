@@ -6,6 +6,7 @@ import { predictCallTime, readQueue, todaySessions } from "./store.ts";
 import { mention, type CallbackQuery, type Message } from "./telegram.ts";
 import { awaitsReset, isBetweenSessions, subscriptionOutcome, type Outcome, type SubscriptionState } from "./subscription.ts";
 import { formatClock } from "./time.ts";
+import { nextSessionText, predictionFailedText, predictionText } from "./voice.ts";
 
 type Subscription = SubscriptionState & {
   chatId: number;
@@ -49,18 +50,15 @@ async function deleteSubscription(sub: Subscription): Promise<boolean> {
 const SOON_MINUTES = 10;
 
 async function predictionLine(reading: QueueReading, target: number): Promise<string> {
-  if (target <= reading.number) return "\n🛌 換場重新叫號後，偶才算得出幾點輪到你，先去蓋被被等一下。";
+  if (target <= reading.number) return `\n${nextSessionText()}`;
   try {
     const now = Date.now();
     const { likely, earliest, latest } = await predictCallTime(reading.number, target, now);
-    const range = earliest < latest ? `，最早 ${formatClock(earliest)}、最晚 ${formatClock(latest)}` : "";
-    if (likely - now <= SOON_MINUTES * 60_000) {
-      return `\n🏃 快輪到你了！偶看大概 <b>${formatClock(likely)}</b> 叫到${range}，肚子先準備好 🍜`;
-    }
-    return `\n🐻 偶用熊鼻子聞了一下，大概 <b>${formatClock(likely)}</b> 會叫到你${range}，醬子。`;
+    const times = { likely: formatClock(likely), earliest: formatClock(earliest), latest: formatClock(latest) };
+    return `\n${predictionText(times, { soon: likely - now <= SOON_MINUTES * 60_000, hasRange: times.earliest !== times.latest })}`;
   } catch (error) {
     console.error("prediction failed", error);
-    return "\n😵‍💫 挖哩咧，偶的熊鼻子塞住了，算不出時間，晚點再問偶。";
+    return `\n${predictionFailedText()}`;
   }
 }
 
