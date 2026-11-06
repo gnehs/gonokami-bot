@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { detectKind } from "../src/lib/poll.ts";
-import { buildDay, buildModel, groupByDay, historyBefore, scoreDay, type ModelDay, type Observation } from "../src/lib/predict.ts";
+import { buildModel, buildSessions, groupByDay, historyBefore, scoreDay, sessionKey, type ModelDay, type Observation } from "../src/lib/predict.ts";
 import { taipeiParts } from "../src/lib/time.ts";
 import { collectSources, resolveToken, runModule } from "./tgcloud-run.ts";
 
@@ -32,7 +32,7 @@ for (const row of readCsvObservations(monitorDir)) {
 }
 const today = taipeiParts(Date.now()).dateKey;
 const days = [...groupByDay([...latestByTime].map(([observedAt, number]) => ({ observedAt, number }))).values()]
-  .flatMap((list) => buildDay(list) ?? [])
+  .flatMap(buildSessions)
   .filter((day) => day.usableForTiming && day.date < today)
   .sort((a, b) => a.date.localeCompare(b.date));
 const keptDates = new Set(days.map((day) => day.date));
@@ -124,7 +124,7 @@ const plan: [table: string, rows: object[], chunk: number][] = [
   ["polls", polls, 100],
   ["pollVotes", pollVotes, 300],
   ["observations", observations, 1000],
-  ["queueDays", days.map((day: ModelDay) => ({ date: day.date, day })), 25],
+  ["queueDays", days.map((day: ModelDay) => ({ date: sessionKey(day), day })), 25],
 ];
 
 for (const [table, rows] of plan) console.log(`${table}: ${rows.length} rows`);

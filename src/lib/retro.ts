@@ -163,7 +163,7 @@ export function buildQueueRetro(year: number, days: ModelDay[]): QueueRetro {
   );
   return {
     year,
-    openDays: inYear.length,
+    openDays: new Set(inYear.map((day) => day.date)).size,
     medianLastNumber: lastNumbers.length ? lastNumbers[Math.floor(lastNumbers.length / 2)] : null,
     busiestDay: busiest && { date: busiest.date, lastNumber: busiest.lastNumber },
     earliestOpen: earliest && { date: earliest.date, minute: earliest.points[0][1] },

@@ -1,7 +1,7 @@
 import { db, api, fetch, BotApiError } from "sdk";
 import { and, eq, gte, sql } from "sdk/db";
 import { chats, kv, memberships, observations, queueDays, users } from "../schema.ts";
-import { buildDay, buildModel, predictWaitMinutes, type Model, type ModelDay } from "./predict.ts";
+import { buildDay, buildModel, predictWaitMinutes, splitSessions, type Model, type ModelDay, type Observation } from "./predict.ts";
 import { parseQueueResponse, QUEUE_URL, type QueueReading } from "./queue.ts";
 import { chatTitle, isMemberStatus, type Chat, type User } from "./telegram.ts";
 import { taipeiMidnight, taipeiParts } from "./time.ts";
@@ -68,13 +68,19 @@ export async function loadModel(): Promise<Model> {
   return buildModel(rows.map((row: { day: ModelDay }) => row.day));
 }
 
-export async function todayCurve(now: number): Promise<ModelDay | null> {
+export async function todaySessions(now: number): Promise<Observation[][]> {
   const start = taipeiMidnight(taipeiParts(now).dateKey);
-  return buildDay(await observationsBetween(start, now + 1));
+  return splitSessions(await observationsBetween(start, now + 1));
+}
+
+/** The curve of the session under way, or of the last one while the board waits for the next. */
+export async function currentSession(now: number): Promise<ModelDay | null> {
+  const sessions = await todaySessions(now);
+  return sessions.length ? buildDay(sessions[sessions.length - 1]) : null;
 }
 
 export async function predictCallTime(current: number, target: number, now = Date.now()): Promise<number> {
-  const [model, today] = await Promise.all([loadModel(), todayCurve(now)]);
+  const [model, today] = await Promise.all([loadModel(), currentSession(now)]);
   return now + predictWaitMinutes(model, today, now, current, target) * 60_000;
 }
 

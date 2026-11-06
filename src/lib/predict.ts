@@ -1,4 +1,5 @@
-import { taipeiParts } from "./time.ts";
+import { MIN_NUMBER } from "./queue.ts";
+import { formatClock, taipeiParts } from "./time.ts";
 
 const DEFAULT_MINUTES_PER_TICKET = 3;
 // A day counts only if the board was watched closely for a real stretch; the old monitor often
@@ -6,11 +7,14 @@ const DEFAULT_MINUTES_PER_TICKET = 3;
 const MIN_TIMING_DURATION_MINUTES = 120;
 const MIN_TIMING_POINTS = 15;
 const NUMBER_RANGE_SLACK = 20;
+// Smaller drops are the staff correcting a mis-press, not the board starting a new session.
+const RESET_MIN_DROP = 10;
 
 export type Observation = { observedAt: number; number: number };
 
 export type Point = [number: number, minuteOfDay: number];
 
+/** One session's service curve. The shop runs a lunch and a dinner session and resets the board between them. */
 export type ModelDay = {
   date: string;
   weekday: number;
@@ -46,7 +50,32 @@ export function isLimitedWeekday(weekday: number): boolean {
   return weekday === 5 || weekday === 6 || weekday === 0;
 }
 
-/** One trading day's service curve from the observations taken that day. */
+function isReset(previous: number, next: number): boolean {
+  return next < previous && (next < MIN_NUMBER || previous - next >= RESET_MIN_DROP);
+}
+
+/** Splits one day's observations wherever the board was reset to start a new session. */
+export function splitSessions(observations: Observation[]): Observation[][] {
+  const sessions: Observation[][] = [];
+  for (const observation of [...observations].sort((a, b) => a.observedAt - b.observedAt)) {
+    const current = sessions[sessions.length - 1];
+    const last = current?.[current.length - 1];
+    if (last && !isReset(last.number, observation.number)) current.push(observation);
+    else sessions.push([observation]);
+  }
+  return sessions;
+}
+
+export function buildSessions(observations: Observation[]): ModelDay[] {
+  return splitSessions(observations).flatMap((session) => buildDay(session) ?? []);
+}
+
+/** Distinguishes a day's lunch and dinner sessions, which share a date. */
+export function sessionKey(day: ModelDay): string {
+  return `${day.date} ${formatClock(Date.parse(`${day.date}T00:00:00+08:00`) + day.points[0][1] * 60_000)}`;
+}
+
+/** One session's service curve from the observations taken during it. */
 export function buildDay(observations: Observation[]): ModelDay | null {
   const sorted = [...observations].sort((a, b) => a.observedAt - b.observedAt);
   const points: Point[] = [];
@@ -131,7 +160,7 @@ function weightedMedian(candidates: { wait: number; weight: number }[]): number 
 }
 
 /**
- * Minutes until `target` is called. `today` is the partial curve observed so far today;
+ * Minutes until `target` is called. `today` is the partial curve of the session under way;
  * when it covers the current number it is trusted outright, otherwise history votes,
  * weighted towards the same weekday, the same limited/regular kind of day and the same clock time.
  */
@@ -212,7 +241,7 @@ export function summarizeAccuracy(scores: DayScore[]): Accuracy | null {
   if (samples === 0) return null;
   return {
     sampleCount: samples,
-    dayCount: scores.length,
+    dayCount: new Set(scores.map((score) => score.date)).size,
     medianAbsErrorMinutes: median(scores.map((score) => score.medianAbsError)) ?? 0,
     within10MinutesRate: scores.reduce((sum, score) => sum + score.within10, 0) / samples,
   };

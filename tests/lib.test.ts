@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDay, buildModel, historyBefore, predictWaitMinutes, scoreDay, summarizeAccuracy, type Observation } from "../src/lib/predict.ts";
+import { buildDay, buildModel, buildSessions, historyBefore, predictWaitMinutes, scoreDay, sessionKey, splitSessions, summarizeAccuracy, type Observation } from "../src/lib/predict.ts";
 import { BYE_OPTIONS, detectKind, parseOption, tallyOptions, tallyVoter } from "../src/lib/poll.ts";
 import { buildChatRetro, retroYear } from "../src/lib/retro.ts";
 import { parseQueueResponse, parseTargetNumber } from "../src/lib/queue.ts";
@@ -33,6 +33,33 @@ test("today's own curve wins once it covers the numbers", () => {
   const model = buildModel(["2026-10-01", "2026-10-08"].map((date) => buildDay(steadyDay(date, 4))!));
   const today = buildDay(steadyDay("2026-10-22", 3))!;
   assert.equal(Math.round(predictWaitMinutes(model, today, at("2026-10-22", "11:30"), 1011, 1021)), 30);
+});
+
+// Shaped like 2026-11-06: reset at 10:37, lunch to 1060, reset at 16:33, dinner to 1062, reset at closing.
+function twoSessionDay(date: string): Observation[] {
+  const run = (start: string, count: number) =>
+    Array.from({ length: count }, (_, i) => ({ observedAt: at(date, start) + (i + 1) * 5 * 60_000, number: 1001 + i * 2 }));
+  return [
+    { observedAt: at(date, "10:37"), number: 1000 },
+    ...run("11:00", 30),
+    { observedAt: at(date, "16:33"), number: 1000 },
+    ...run("17:00", 31),
+    { observedAt: at(date, "21:31"), number: 1000 },
+  ];
+}
+
+test("a board reset starts a new session", () => {
+  const sessions = splitSessions(twoSessionDay("2026-11-06"));
+  assert.deepEqual(sessions.map((session) => session.length), [31, 32, 1]);
+  const [lunch, dinner] = buildSessions(twoSessionDay("2026-11-06"));
+  assert.deepEqual([lunch.lastNumber, dinner.lastNumber], [1059, 1061]);
+  assert.ok(lunch.usableForTiming && dinner.usableForTiming);
+  assert.deepEqual([sessionKey(lunch), sessionKey(dinner)], ["2026-11-06 10:37", "2026-11-06 16:33"]);
+});
+
+test("a small step back is a correction, not a reset", () => {
+  const observations = [1001, 1005, 1003, 1006].map((number, i) => ({ observedAt: at("2026-11-06", "12:00") + i * 60_000, number }));
+  assert.equal(splitSessions(observations).length, 1);
 });
 
 test("a day logged in one burst is not trusted for timing", () => {

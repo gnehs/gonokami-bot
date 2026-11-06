@@ -67,7 +67,8 @@ export const observations = table("observations", {
   number: integer("number").notNull(),
 });
 
-// Each day's service curve (a ModelDay), rebuilt from observations once the day is over.
+// Each session's service curve (a ModelDay), rebuilt from observations once the day is over. Keyed by
+// sessionKey ("2026-11-06 16:33"); rows from before the board had two sessions are keyed by the bare date.
 export const queueDays = table("queue_days", {
   date: text("date").primaryKey(),
   day: json("day").notNull(),

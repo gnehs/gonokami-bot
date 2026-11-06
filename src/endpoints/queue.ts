@@ -5,7 +5,7 @@ import type { QueueResult } from "../lib/api-types.ts";
 import { requireUser, type EndpointContext } from "../lib/guard.ts";
 import { predictWaitMinutes, summarizeAccuracy, type DayScore } from "../lib/predict.ts";
 import { parseTargetNumber } from "../lib/queue.ts";
-import { getKv, loadModel, readQueue, todayCurve } from "../lib/store.ts";
+import { currentSession, getKv, loadModel, readQueue } from "../lib/store.ts";
 
 export default async function (input: { target?: string }, ctx: EndpointContext): Promise<QueueResult> {
   const user = requireUser(ctx);
@@ -13,7 +13,7 @@ export default async function (input: { target?: string }, ctx: EndpointContext)
   const [reading, model, today, scores] = await Promise.all([
     readQueue(),
     loadModel(),
-    todayCurve(now),
+    currentSession(now),
     getKv<DayScore[]>("dayScores"),
   ]);
   const predictAt = (target: number) =>

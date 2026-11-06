@@ -15,7 +15,7 @@ const TICKET = glyph(<path d="M4 7.5A1.5 1.5 0 0 1 5.5 6h13A1.5 1.5 0 0 1 20 7.5
 const CLOCK = glyph(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 1.5" /></>);
 const BELL = glyph(<><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>);
 
-/** Tickets called per hour across today's readings, or null before there is a span to measure. */
+/** Tickets called per hour across this session's readings, or null before there is a span to measure. */
 function pace(today: Point[]): { called: number; perHour: number } | null {
   if (today.length < 2) return null;
   const sorted = [...today].sort((a, b) => a[1] - b[1]);
@@ -69,7 +69,7 @@ export function Queue() {
             <p className="mt-1.5 flex items-center justify-center gap-2 text-[17px]">
               <span className="num font-semibold text-up">+{todayPace.called}</span>
               <Pill tone="up">↑ {todayPace.perHour.toFixed(1)} 號/時</Pill>
-              <span className="text-hint">今天</span>
+              <span className="text-hint">這場</span>
             </p>
           )}
         </div>
@@ -83,12 +83,12 @@ export function Queue() {
 
       {calling && (
         <>
-          <Section title="今天的叫號曲線">
+          <Section title="這場的叫號曲線">
             <Group className="px-4 pb-3 pt-4">
               {today.length >= 2 ? (
                 <QueueChart points={today} />
               ) : (
-                <p className="py-6 text-center text-[15px] text-hint">今天還沒有足夠的點可以畫線，晚點再來看看。</p>
+                <p className="py-6 text-center text-[15px] text-hint">這場還沒有足夠的點可以畫線，晚點再來看看。</p>
               )}
             </Group>
           </Section>

@@ -2,7 +2,7 @@ import { db, api, BotApiError } from "sdk";
 import { and, eq } from "sdk/db";
 import { subscriptions } from "../schema.ts";
 import { parseTargetNumber, type QueueReading } from "./queue.ts";
-import { predictCallTime, readQueue } from "./store.ts";
+import { predictCallTime, readQueue, todaySessions } from "./store.ts";
 import { mention, type CallbackQuery, type Message } from "./telegram.ts";
 import { formatClock } from "./time.ts";
 
@@ -133,24 +133,52 @@ export async function handleCancelNumber(query: CallbackQuery, ownerId: number) 
   await reply(message, `🚫 哼嗯，偶幫你取消 <b>${sub.targetNumber}</b> 號的訂閱了。醬子。`);
 }
 
-/** Called every minute: announce reached numbers, drop subscriptions older than five hours. */
+type Outcome = "reached" | "expired" | "sessionOver";
+
+function outcomeText(sub: Subscription, outcome: Outcome): string {
+  const who = mention(sub.userId, sub.firstName);
+  if (outcome === "reached") return `喂～ 👑 ${who} ，你訂的 ${sub.targetNumber} 號到了，怕的是他。還不快去！`;
+  if (outcome === "expired") {
+    return `欸 👋 ${who} ，你的 ${sub.targetNumber} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`;
+  }
+  return `欸 👋 ${who} ，這場收了，店家把號碼重新從頭叫，你的 ${sub.targetNumber} 號偶就幫你取消了。下一場的號碼再打 <code>/number</code> 跟偶說，醬子。`;
+}
+
+/**
+ * When the board was last moved in the session before the current one, or null if today has had no reset.
+ * A subscription made before then belongs to that finished session; one made after it was waiting for this one.
+ */
+async function previousSessionEndedAt(now: number): Promise<number | null> {
+  const sessions = await todaySessions(now);
+  const previous = sessions[sessions.length - 2];
+  return previous ? previous[previous.length - 1].observedAt : null;
+}
+
+function outcomeOf(sub: Subscription, reading: QueueReading, now: number, sessionEndedAt: number | null): Outcome | null {
+  // Expiry is checked first: overnight, the board still shows last night's final number.
+  if (now - sub.createdAt > SUBSCRIPTION_TTL_MS) return "expired";
+  // After a reset the new session counts up through the same numbers, so the old target would fire falsely.
+  if (sessionEndedAt !== null && sub.createdAt < sessionEndedAt) return "sessionOver";
+  return reading.number >= sub.targetNumber ? "reached" : null;
+}
+
+/** Called every minute: announce reached numbers, drop subscriptions older than five hours or from a finished session. */
 export async function notifySubscribers(reading: QueueReading) {
   const subs: Subscription[] = await db.select().from(subscriptions).all();
+  if (subs.length === 0) return 0;
+  const now = Date.now();
+  const sessionEndedAt = await previousSessionEndedAt(now);
   let notified = 0;
   for (const sub of subs) {
-    // Expiry is checked first: overnight, the board still shows last night's final number.
-    const expired = Date.now() - sub.createdAt > SUBSCRIPTION_TTL_MS;
-    const reached = !expired && reading.number >= sub.targetNumber;
-    if (!reached && !expired) continue;
+    const outcome = outcomeOf(sub, reading, now, sessionEndedAt);
+    if (!outcome) continue;
 
     // Whoever deletes the row sends the message, so overlapping ticks never announce twice.
     if (!(await deleteSubscription(sub))) continue;
     try {
       await api.sendMessage({
         chat_id: sub.chatId,
-        text: reached
-          ? `喂～ 👑 ${mention(sub.userId, sub.firstName)} ，你訂的 ${sub.targetNumber} 號到了，怕的是他。還不快去！`
-          : `欸 👋 ${mention(sub.userId, sub.firstName)} ，你的 ${sub.targetNumber} 號等太久了，超過五小時偶就幫你取消了，很遜欸。881。`,
+        text: outcomeText(sub, outcome),
         parse_mode: "HTML",
         reply_parameters: { message_id: sub.messageId, allow_sending_without_reply: true },
       });
