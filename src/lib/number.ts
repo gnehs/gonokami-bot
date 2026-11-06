@@ -46,15 +46,21 @@ async function deleteSubscription(sub: Subscription): Promise<boolean> {
   return rowsAffected > 0;
 }
 
+const SOON_MINUTES = 10;
+
 async function predictionLine(reading: QueueReading, target: number): Promise<string> {
-  if (target <= reading.number) return "\n🕒 換場重新叫號後，偶才算得出預估時間。";
+  if (target <= reading.number) return "\n🛌 換場重新叫號後，偶才算得出幾點輪到你，先去蓋被被等一下。";
   try {
-    const { likely, earliest, latest } = await predictCallTime(reading.number, target);
-    const range = earliest < latest ? `（大概 ${formatClock(earliest)}–${formatClock(latest)}）` : "";
-    return `\n🕒 預估叫號時間 <b>${formatClock(likely)}</b>${range}`;
+    const now = Date.now();
+    const { likely, earliest, latest } = await predictCallTime(reading.number, target, now);
+    const range = earliest < latest ? `，最早 ${formatClock(earliest)}、最晚 ${formatClock(latest)}` : "";
+    if (likely - now <= SOON_MINUTES * 60_000) {
+      return `\n🏃 快輪到你了！偶看大概 <b>${formatClock(likely)}</b> 叫到${range}，肚子先準備好 🍜`;
+    }
+    return `\n🐻 偶用熊鼻子聞了一下，大概 <b>${formatClock(likely)}</b> 會叫到你${range}，醬子。`;
   } catch (error) {
     console.error("prediction failed", error);
-    return "\n預測叫號時間暫時不可用，晚點再試。";
+    return "\n😵‍💫 挖哩咧，偶的熊鼻子塞住了，算不出時間，晚點再問偶。";
   }
 }
 
