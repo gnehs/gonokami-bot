@@ -3,7 +3,7 @@ import type { CallTime, Point, QueueResult } from "../../src/lib/api-types.ts";
 import { call } from "./api.ts";
 import { QueueChart } from "./Chart.tsx";
 import { formatAgo, formatDateTime, formatPredicted, formatRange, isToday } from "./format.ts";
-import { Empty, ErrorView, Group, IconBubble, Pill, Row, Section, Spinner, toApiError, useRemote } from "./ui.tsx";
+import { Empty, ErrorView, Group, IconBubble, Row, Section, Spinner, toApiError, useRemote } from "./ui.tsx";
 import type { ApiError } from "./api.ts";
 
 const glyph = (d: ReactNode) => (
@@ -71,10 +71,9 @@ export function Queue() {
           </p>
           <p className="mt-3 text-[17px] text-hint">{formatAgo(reading.changedAt)}換號</p>
           {todayPace && (
-            <p className="mt-1.5 flex items-center justify-center gap-2 text-[17px]">
-              <span className="num font-semibold text-up">+{todayPace.called}</span>
-              <Pill tone="up">↑ {todayPace.perHour.toFixed(1)} 號/時</Pill>
-              <span className="text-hint">這場</span>
+            <p className="mt-1.5 text-[17px] text-hint">
+              這場叫了 <span className="num font-semibold text-fg">{todayPace.called}</span> 號，每小時約{" "}
+              <span className="num font-semibold text-fg">{Math.round(todayPace.perHour)}</span> 號
             </p>
           )}
         </div>
@@ -170,17 +169,40 @@ export function Queue() {
       </Section>
 
       {accuracy && (
-        <Section title="預測準不準" aside={`回測 ${accuracy.dayCount} 天`}>
+        <Section title="預測準不準" aside={`看過去 ${accuracy.dayCount} 天`}>
           <Group className="px-4 py-4">
             <p className="text-[15px] text-hint">誤差中位數</p>
             <p className="num mt-0.5 text-[34px] font-bold leading-tight">
               {accuracy.medianAbsErrorMinutes.toFixed(1)}
               <span className="ml-1 text-[20px]">分鐘</span>
             </p>
-            <p className="mt-2 flex items-center gap-2">
-              <Pill tone="up">✓ {Math.round(accuracy.within10MinutesRate * 100)}%</Pill>
-              <span className="text-[15px] text-hint">誤差在 10 分鐘內</span>
+            <p className="mt-1 text-[15px] text-hint">
+              <span className="num">{Math.round(accuracy.within10MinutesRate * 100)}%</span> 的預測差不到 10 分鐘
             </p>
+          </Group>
+          <Group className="mt-3">
+            {[
+              {
+                q: "誤差中位數是什麼？",
+                a: `每次預測都會跟實際叫到的時間差一點。把這些差距由小排到大，排在正中間的就是中位數：一半的預測差不到 ${accuracy.medianAbsErrorMinutes.toFixed(1)} 分鐘，另一半差得比較多。`,
+              },
+              {
+                q: `${Math.round(accuracy.within10MinutesRate * 100)}% 是什麼意思？`,
+                a: `每 100 次預測，大約有 ${Math.round(accuracy.within10MinutesRate * 100)} 次跟實際叫到的時間差不到 10 分鐘。`,
+              },
+              {
+                q: "這些數字怎麼算出來的？",
+                a: `拿過去 ${accuracy.dayCount} 天的叫號紀錄，假裝回到當時、只用那時候看得到的資料來預測，再跟後來真正叫到的時間對答案。`,
+              },
+            ].map(({ q, a }) => (
+              <details key={q} className="row group pl-4">
+                <summary className="row-body mr-4 flex min-h-[52px] cursor-pointer list-none items-center gap-3 py-2.5 [&::-webkit-details-marker]:hidden">
+                  <span className="flex-1 text-[17px]">{q}</span>
+                  <span aria-hidden="true" className="text-[15px] text-hint transition-transform duration-200 group-open:rotate-90">›</span>
+                </summary>
+                <p className="mr-4 pb-3.5 text-[15px] leading-relaxed text-hint">{a}</p>
+              </details>
+            ))}
           </Group>
         </Section>
       )}
